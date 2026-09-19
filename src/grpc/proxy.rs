@@ -1,0 +1,125 @@
+use crate::config::ProxyConfig;
+use crate::kube::auth::KubeAuthClient;
+use crate::utils::policy::{compile_resource_attributes, extract_variables, match_policy};
+use async_trait::async_trait;
+use pingora::http::ResponseHeader;
+use pingora::prelude::*;
+use pingora::proxy::{ProxyHttp, Session};
+use std::sync::Arc;
+use tracing::{error, info};
+
+pub struct GrpcProxy {
+    client: KubeAuthClient,
+    config: Arc<ProxyConfig>,
+}
+
+impl GrpcProxy {
+    pub fn new(config: Arc<ProxyConfig>, client: KubeAuthClient) -> Self {
+        Self { config, client }
+    }
+
+    async fn error_response(
+        &self,
+        status_code: u8,
+        message: &str,
+        session: &mut Session,
+    ) -> Result<bool> {
+        let mut resp = ResponseHeader::build(200, Some(2))?;
+        resp.insert_header("content-type", "application/grpc")?;
+        session.write_response_header(Box::new(resp), false).await?;
+
+        let mut trailers = pingora::http::HMap::new();
+        trailers.insert("grpc-status", status_code.to_string().parse().unwrap());
+        trailers.insert("grpc-message", message.parse().unwrap());
+        session
+            .downstream_session
+            .write_response_trailers(trailers)
+            .await?;
+        Ok(true)
+    }
+}
+
+#[async_trait]
+impl ProxyHttp for GrpcProxy {
+    type CTX = ();
+
+    fn new_ctx(&self) -> Self::CTX {}
+
+    async fn request_filter(&self, session: &mut Session, _ctx: &mut Self::CTX) -> Result<bool> {
+        info!("request_filter");
+        let path = session.req_header().uri.path();
+        let method = session.req_header().method.as_str();
+
+        let authorization = session
+            .req_header()
+            .headers
+            .get("authorization")
+            .or_else(|| session.req_header().headers.get("host"))
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+
+        let bearer_token = authorization.strip_prefix("Bearer ").unwrap_or("");
+
+        let (service, action) = parse_grpc_path(path);
+
+        let auth_info = self.client.authenticate(bearer_token).await;
+
+        match auth_info {
+            Ok(auth_info) => {
+                let vars = extract_variables(self.config.grpc.extractors.clone(), |header| {
+                    session
+                        .req_header()
+                        .headers
+                        .get(header)
+                        .and_then(|v| v.to_str().ok())
+                        .map(|v| v.to_string())
+                });
+
+                for policy in &self.config.grpc.auth_policies {
+                    if match_policy(policy, service, action, |header| {
+                        session.req_header().headers.get(header).is_some()
+                    }) {
+                        let resource_attributes =
+                            compile_resource_attributes(&policy.resource_attributes, &vars);
+                        info!("authorizing: {:?}", auth_info);
+                        info!("resource_attributes: {:?}", resource_attributes);
+                        let resp = self
+                            .client
+                            .authorize(&auth_info, &resource_attributes)
+                            .await;
+                        info!("authorization response: {:?}", resp);
+                        if let Err(e) = resp {
+                            error!("authorization failed: {:?}", e);
+                            return self.error_response(16, &e.to_string(), session).await;
+                        }
+                    }
+                }
+
+                return Ok(false);
+            }
+            Err(e) => {
+                error!("authentication failed: {:?}", e);
+                return self.error_response(16, &e.to_string(), session).await;
+            }
+        }
+    }
+
+    async fn upstream_peer(
+        &self,
+        _session: &mut Session,
+        _ctx: &mut Self::CTX,
+    ) -> Result<Box<HttpPeer>> {
+        let mut peer = HttpPeer::new(
+            (self.config.upstream.host.clone(), self.config.upstream.port),
+            false,
+            String::new(),
+        );
+        peer.options.set_http_version(2, 2);
+        Ok(Box::new(peer))
+    }
+}
+
+fn parse_grpc_path(path: &str) -> (&str, &str) {
+    let trimmed = path.strip_prefix('/').unwrap_or(path);
+    trimmed.rsplit_once('/').unwrap_or((trimmed, ""))
+}

@@ -1,0 +1,47 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Cargo build output
+target/
+
+#local dev
+.local/
+
+# Rustfmt backup files
+**/*.rs.bk
+
+
+# MSVC debugging symbols
+*.pdb
+
+# Cargo mutants output
+**/mutants.out*/
+
+# LLVM coverage artifacts
+coverage/
+coverage.json
+*.profraw
+*.profdata
+
+# Dotdirs (allow .github/, .cargo/, and .hooks/)
+.*/
+!.cargo/
+!.github/
+!.claude/
+!.hooks/
+.claude/*
+!.claude/CLAUDE.md
+
+
+# Docs are markdown only
+docs/**/
+!docs/
+!docs/proposals/
+!docs/user-guide/
+!docs/user-guide/**
+!docs/dev-guide/
+!docs/dev-guide/**
+!docs/api/
+!docs/api/**
+
