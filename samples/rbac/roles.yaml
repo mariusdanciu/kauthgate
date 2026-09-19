@@ -1,0 +1,29 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dch-ingest
+  namespace: marius
+rules:
+  - apiGroups: ["dataconnecthub.opendatahub.io"]
+    resources: 
+      - data-connections
+      - data-store
+    verbs: ["get"]
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dch-ingest-binding
+  namespace: marius
+subjects:
+  - kind: User
+    name: mdanciu
+  - kind: ServiceAccount
+    name: testuser
+roleRef:
+  kind: Role
+  name: dch-ingest
+  apiGroup: rbac.authorization.k8s.io
+

@@ -1,0 +1,35 @@
+upstream:
+  host: 127.0.0.1
+  port: 50051
+
+server:
+  host: 0.0.0.0
+  port: 6188
+  ssl: false
+  cert_file: ""
+  key_file: ""
+
+auth:
+  cache-ttl-secs: 300
+  token-review-audiences: []
+
+grpc:
+  extractors:
+    - name: tenant-id
+      header: x-tenant-id
+ 
+  auth-policies:
+    - name: flight
+      conditions:
+        service: arrow.flight.protocol.FlightService
+        allowed-actions:
+          - DoAction
+          - DoGet
+          - GetFlightInfo
+        required-headers:
+          - x-tenant-id
+      resource-attributes:
+        namespace: "{tenant-id}"
+        api-group: dataconnecthub.opendatahub.io
+        resource: data-store
+        verb: "get"

@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
-use tracing::{debug, info, warn, error};
+use tracing::{debug, error, info, warn};
 
 fn hash_token(token: &str) -> String {
     let mut hasher = Sha256::new();
@@ -130,10 +130,7 @@ impl KubeAuthClient {
         auth_info: &AuthInfo,
         resource_attributes: &ResourceAttributes,
     ) -> Result<(), AuthError> {
-        let key = format!(
-            "{}:{:?}:{:?}",
-            auth_info.username, auth_info.groups, resource_attributes
-        );
+        let key = format!("{}:{:?}", auth_info.username, auth_info.groups);
         let client = self.client().await?.clone();
         let username = auth_info.username.clone();
         let groups = auth_info.groups.clone();
@@ -151,13 +148,11 @@ impl KubeAuthClient {
                     ..Default::default()
                 };
 
-                info!("SAR request: user={}, groups={:?}, resource_attributes={:?}",
-                    sar.spec.user.as_deref().unwrap_or(""), sar.spec.groups.as_deref().unwrap_or(&[]), sar.spec.resource_attributes);
                 let api: Api<SubjectAccessReview> = Api::all(client);
                 let result = api
                     .create(&PostParams::default(), &sar)
                     .await
-                    .map_err(|e| AuthError::Unauthorized)?;
+                    .map_err(|_| AuthError::Unauthorized)?;
 
                 let status = result
                     .status
