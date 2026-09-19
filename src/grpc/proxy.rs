@@ -67,7 +67,7 @@ impl ProxyHttp for GrpcProxy {
         match auth_info {
             Ok(auth_info) => {
                 let vars = extract_variables(
-                    self.config.grpc.extractors.clone(),
+                    &self.config.grpc.extractors,
                     path,
                     |h| get_header(session, h),
                     |_| None, // No query strings for gRPC.

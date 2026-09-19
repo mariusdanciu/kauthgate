@@ -130,7 +130,15 @@ impl KubeAuthClient {
         auth_info: &AuthInfo,
         resource_attributes: &ResourceAttributes,
     ) -> Result<(), AuthError> {
-        let key = format!("{}:{:?}", auth_info.username, auth_info.groups);
+        let key = format!(
+            "{}:{:?}:{}:{}:{}:{}",
+            auth_info.username,
+            auth_info.groups,
+            resource_attributes.namespace.as_deref().unwrap_or(""),
+            resource_attributes.group.as_deref().unwrap_or(""),
+            resource_attributes.resource.as_deref().unwrap_or(""),
+            resource_attributes.verb.as_deref().unwrap_or(""),
+        );
         let client = self.client().await?.clone();
         let username = auth_info.username.clone();
         let groups = auth_info.groups.clone();

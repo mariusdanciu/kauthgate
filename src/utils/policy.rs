@@ -4,16 +4,16 @@ use crate::config::SARAttributes;
 use k8s_openapi::api::authorization::v1::ResourceAttributes;
 use std::collections::HashMap;
 
-fn resolve(value: &Binding, variables: &HashMap<String, String>) -> Option<String> {
+fn resolve(value: &Binding, variables: &HashMap<&str, String>) -> Option<String> {
     match value {
-        Binding::Variable(name) => variables.get(name).map(|s| s.to_string()),
+        Binding::Variable(name) => variables.get(name.as_str()).map(|s| s.to_string()),
         Binding::Literal(value) => Some(value.to_string()),
     }
 }
 
 pub(crate) fn compile_resource_attributes(
     resource_attributes: &SARAttributes,
-    variables: &HashMap<String, String>,
+    variables: &HashMap<&str, String>,
 ) -> ResourceAttributes {
     let namespace = resolve(&resource_attributes.namespace, variables);
     let group = resolve(&resource_attributes.api_group, variables);
@@ -29,18 +29,18 @@ pub(crate) fn compile_resource_attributes(
     }
 }
 
-pub(crate) fn extract_variables(
-    extractors: Vec<Extractor>,
+pub(crate) fn extract_variables<'a>(
+    extractors: &'a [Extractor],
     req_path: &str,
     header_fn: impl Fn(&str) -> Option<String>,
     query_fn: impl Fn(&str) -> Option<String>,
-) -> HashMap<String, String> {
+) -> HashMap<&'a str, String> {
     let mut variables = HashMap::new();
     for extractor in extractors {
         match extractor {
             Extractor::Header { name, header } => {
-                if let Some(value) = header_fn(&header) {
-                    variables.insert(name, value);
+                if let Some(value) = header_fn(header) {
+                    variables.insert(name.as_str(), value);
                 }
             }
             Extractor::Path { path } => {
@@ -49,13 +49,13 @@ pub(crate) fn extract_variables(
                     if let Some(var_name) =
                         pattern.strip_prefix('{').and_then(|s| s.strip_suffix('}'))
                     {
-                        variables.insert(var_name.to_string(), segment.to_string());
+                        variables.insert(var_name, segment.to_string());
                     }
                 }
             }
             Extractor::Query { name, parameter } => {
-                if let Some(value) = query_fn(&parameter) {
-                    variables.insert(name, value);
+                if let Some(value) = query_fn(parameter) {
+                    variables.insert(name.as_str(), value);
                 }
             }
         }
@@ -91,10 +91,10 @@ mod tests {
     use super::*;
     use crate::config::{Binding, SARAttributes};
 
-    fn vars(entries: &[(&str, &str)]) -> HashMap<String, String> {
+    fn vars<'a>(entries: &[(&'a str, &str)]) -> HashMap<&'a str, String> {
         entries
             .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .map(|(k, v)| (*k, v.to_string()))
             .collect()
     }
 
@@ -201,6 +201,13 @@ mod tests {
 
     // -- match_path tests --
 
+    fn owned_vars(entries: &[(&str, &str)]) -> HashMap<String, String> {
+        entries
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
     fn pat(segments: &[&str]) -> Vec<String> {
         segments.iter().map(|s| s.to_string()).collect()
     }
@@ -217,7 +224,7 @@ mod tests {
             "/svc/hello/sub/world",
             pat(&["svc", "{arg1}", "sub", "{arg2}"]),
         );
-        assert_eq!(result, Some(vars(&[("arg1", "hello"), ("arg2", "world")])));
+        assert_eq!(result, Some(owned_vars(&[("arg1", "hello"), ("arg2", "world")])));
     }
 
     #[test]
@@ -229,7 +236,7 @@ mod tests {
     #[test]
     fn match_path_wildcard_and_variable_combined() {
         let result = match_path("/v1/skip/my-ns/items", pat(&["v1", "*", "{ns}", "items"]));
-        assert_eq!(result, Some(vars(&[("ns", "my-ns")])));
+        assert_eq!(result, Some(owned_vars(&[("ns", "my-ns")])));
     }
 
     #[test]
@@ -265,7 +272,7 @@ mod tests {
     #[test]
     fn match_path_all_variables() {
         let result = match_path("/a/b/c", pat(&["{x}", "{y}", "{z}"]));
-        assert_eq!(result, Some(vars(&[("x", "a"), ("y", "b"), ("z", "c")])));
+        assert_eq!(result, Some(owned_vars(&[("x", "a"), ("y", "b"), ("z", "c")])));
     }
 
     #[test]
