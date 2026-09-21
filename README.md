@@ -13,7 +13,7 @@ An authentication and authorization gateway built on [Pingora](https://github.co
 
 ## Configuration
 
-The gateway is configured via a YAML file. It supports both gRPC and HTTP proxies, each with their own upstream and mapping rules.
+The gateway is configured via a YAML file. It supports both gRPC and HTTP proxies, each with their own upstream and rules.
 
 ```yaml
 auth:
@@ -98,7 +98,7 @@ All request match fields are optional. When omitted, the field is not checked (a
 
 ### SAR resource attributes
 
-Each mapping specifies `sar-resource-attributes` for the SubjectAccessReview. Fields support `{variable}` interpolation from extracted values:
+Each rule specifies `sar-resource-attributes` for the SubjectAccessReview. Fields support `{variable}` interpolation from extracted values:
 
 ```yaml
 sar-resource-attributes:

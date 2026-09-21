@@ -2,7 +2,7 @@ use crate::config::defs::Binding;
 use crate::config::grpc::Rule;
 use std::collections::HashMap;
 
-pub(crate) fn check_mapping(
+pub(crate) fn check_rule(
     policy: &Rule,
     service: &str,
     grpc_method: &str,
@@ -94,20 +94,20 @@ pub mod tests {
     #[test]
     fn match_policy_matches_service_and_action() {
         let p = policy("my.Service", &["GetItem", "ListItems"], vec![]);
-        assert!(check_mapping(&p, "my.Service", "GetItem", no_header).is_some());
-        assert!(check_mapping(&p, "my.Service", "ListItems", no_header).is_some());
+        assert!(check_rule(&p, "my.Service", "GetItem", no_header).is_some());
+        assert!(check_rule(&p, "my.Service", "ListItems", no_header).is_some());
     }
 
     #[test]
     fn match_policy_rejects_wrong_service() {
         let p = policy("my.Service", &["GetItem"], vec![]);
-        assert!(check_mapping(&p, "other.Service", "GetItem", no_header).is_none());
+        assert!(check_rule(&p, "other.Service", "GetItem", no_header).is_none());
     }
 
     #[test]
     fn match_policy_rejects_wrong_action() {
         let p = policy("my.Service", &["GetItem"], vec![]);
-        assert!(check_mapping(&p, "my.Service", "DeleteItem", no_header).is_none());
+        assert!(check_rule(&p, "my.Service", "DeleteItem", no_header).is_none());
     }
 
     #[test]
@@ -125,7 +125,7 @@ pub mod tests {
             "x-request-id" => Some("r1".into()),
             _ => None,
         };
-        let result = check_mapping(&p, "my.Service", "GetItem", get);
+        let result = check_rule(&p, "my.Service", "GetItem", get);
         assert!(result.is_some());
         let vars = result.unwrap();
         assert_eq!(vars.get("tenant").unwrap(), "t1");
@@ -146,13 +146,13 @@ pub mod tests {
             "x-tenant-id" => Some("t1".into()),
             _ => None,
         };
-        assert!(check_mapping(&p, "my.Service", "GetItem", get).is_none());
+        assert!(check_rule(&p, "my.Service", "GetItem", get).is_none());
     }
 
     #[test]
     fn match_policy_no_headers_always_passes() {
         let p = policy("my.Service", &["GetItem"], vec![]);
-        assert!(check_mapping(&p, "my.Service", "GetItem", no_header).is_some());
+        assert!(check_rule(&p, "my.Service", "GetItem", no_header).is_some());
     }
 
     #[test]
@@ -162,7 +162,7 @@ pub mod tests {
             "x-version" => Some("v1".into()),
             _ => None,
         };
-        assert!(check_mapping(&p, "my.Service", "GetItem", get).is_none());
+        assert!(check_rule(&p, "my.Service", "GetItem", get).is_none());
     }
 
     #[test]
@@ -172,7 +172,7 @@ pub mod tests {
             "x-version" => Some("v2".into()),
             _ => None,
         };
-        assert!(check_mapping(&p, "my.Service", "GetItem", get).is_some());
+        assert!(check_rule(&p, "my.Service", "GetItem", get).is_some());
     }
 
     #[test]
@@ -191,13 +191,13 @@ pub mod tests {
                 verb: Binding::Literal("get".into()),
             },
         };
-        assert!(check_mapping(&p, "any.Service", "AnyMethod", no_header).is_some());
+        assert!(check_rule(&p, "any.Service", "AnyMethod", no_header).is_some());
     }
 
     #[test]
     fn match_policy_injects_service_and_method() {
         let p = policy("my.Service", &["GetItem"], vec![]);
-        let vars = check_mapping(&p, "my.Service", "GetItem", no_header).unwrap();
+        let vars = check_rule(&p, "my.Service", "GetItem", no_header).unwrap();
         assert_eq!(vars.get("service").unwrap(), "my.Service");
         assert_eq!(vars.get("grpc_method").unwrap(), "GetItem");
     }

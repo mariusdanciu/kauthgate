@@ -4,13 +4,13 @@ use crate::utils::proxy::path_to_vec;
 use std::collections::HashMap;
 use tracing::info;
 
-fn check_path(mapping_path: &[Binding], request_path: &[&str]) -> Option<HashMap<String, String>> {
+fn check_path(rule_path: &[Binding], request_path: &[&str]) -> Option<HashMap<String, String>> {
     let mut variables = HashMap::with_capacity(10);
-    let m_len = mapping_path.len();
+    let m_len = rule_path.len();
     let r_len = request_path.len();
 
-    let last_is_any = mapping_path[m_len - 1] == Binding::Literal("**".to_string())
-        || mapping_path[m_len - 1] == Binding::Variable("*".to_string());
+    let last_is_any = rule_path[m_len - 1] == Binding::Literal("**".to_string())
+        || rule_path[m_len - 1] == Binding::Variable("*".to_string());
 
     if m_len == r_len + 1 && !last_is_any {
         return None;
@@ -19,7 +19,7 @@ fn check_path(mapping_path: &[Binding], request_path: &[&str]) -> Option<HashMap
         return None;
     }
 
-    for (i, segment) in mapping_path.iter().enumerate() {
+    for (i, segment) in rule_path.iter().enumerate() {
         match segment {
             Binding::Variable(var) => {
                 variables.insert(var.to_string(), request_path[i].to_string());
@@ -39,7 +39,7 @@ fn check_path(mapping_path: &[Binding], request_path: &[&str]) -> Option<HashMap
     Some(variables)
 }
 
-pub(crate) fn check_mapping(
+pub(crate) fn check_rule(
     policy: &Rule,
     path: &str,
     method: &str,
@@ -50,11 +50,11 @@ pub(crate) fn check_mapping(
 
     let parts: Vec<&str> = path_to_vec(path);
 
-    if let Some(mapping_path) = &policy.request.path {
-        if let Some(p_vars) = check_path(mapping_path, &parts) {
+    if let Some(rule_path) = &policy.request.path {
+        if let Some(p_vars) = check_path(rule_path, &parts) {
             variables.extend(p_vars);
         } else {
-            info!("Path does not match mapping path {:?} {:?}", path, mapping_path);
+            info!("Path does not match rule path {:?} {:?}", path, rule_path);
             return None;
         }
     }
@@ -129,7 +129,7 @@ mod tests {
         None
     }
 
-    fn mapping(
+    fn rule(
         path: Option<&str>,
         methods: Option<&[&str]>,
         headers: Option<Vec<Entity>>,
@@ -222,45 +222,45 @@ mod tests {
         assert!(result.is_some());
     }
 
-    // -- check_mapping tests --
+    // -- check_rule tests --
 
     #[test]
-    fn mapping_matches_path_and_method() {
-        let m = mapping(Some("/api/v1/users"), Some(&["GET"]), None, None);
-        let result = check_mapping(&m, "/api/v1/users", "GET", no_header, no_query);
+    fn rule_matches_path_and_method() {
+        let m = rule(Some("/api/v1/users"), Some(&["GET"]), None, None);
+        let result = check_rule(&m, "/api/v1/users", "GET", no_header, no_query);
         assert!(result.is_some());
     }
 
     #[test]
-    fn mapping_rejects_wrong_method() {
-        let m = mapping(Some("/api/v1/users"), Some(&["GET"]), None, None);
-        let result = check_mapping(&m, "/api/v1/users", "POST", no_header, no_query);
+    fn rule_rejects_wrong_method() {
+        let m = rule(Some("/api/v1/users"), Some(&["GET"]), None, None);
+        let result = check_rule(&m, "/api/v1/users", "POST", no_header, no_query);
         assert!(result.is_none());
     }
 
     #[test]
-    fn mapping_rejects_wrong_path() {
-        let m = mapping(Some("/api/v1/users"), Some(&["GET"]), None, None);
-        let result = check_mapping(&m, "/api/v2/items", "GET", no_header, no_query);
+    fn rule_rejects_wrong_path() {
+        let m = rule(Some("/api/v1/users"), Some(&["GET"]), None, None);
+        let result = check_rule(&m, "/api/v2/items", "GET", no_header, no_query);
         assert!(result.is_none());
     }
 
     #[test]
-    fn mapping_no_methods_accepts_any() {
-        let m = mapping(Some("/api"), None, None, None);
-        let result = check_mapping(&m, "/api", "DELETE", no_header, no_query);
+    fn rule_no_methods_accepts_any() {
+        let m = rule(Some("/api"), None, None, None);
+        let result = check_rule(&m, "/api", "DELETE", no_header, no_query);
         assert!(result.is_some());
     }
 
     #[test]
-    fn mapping_no_path_accepts_any() {
-        let m = mapping(None, Some(&["GET"]), None, None);
-        let result = check_mapping(&m, "/anything/here", "GET", no_header, no_query);
+    fn rule_no_path_accepts_any() {
+        let m = rule(None, Some(&["GET"]), None, None);
+        let result = check_rule(&m, "/anything/here", "GET", no_header, no_query);
         assert!(result.is_some());
     }
 
     #[test]
-    fn mapping_extracts_path_variables() {
+    fn rule_extracts_path_variables() {
         let m = Rule {
             name: "test".into(),
             request: RequestMatch {
@@ -276,20 +276,20 @@ mod tests {
                 verb: Binding::Literal("v".into()),
             },
         };
-        let vars = check_mapping(&m, "/tenants/acme/resources", "GET", no_header, no_query).unwrap();
+        let vars = check_rule(&m, "/tenants/acme/resources", "GET", no_header, no_query).unwrap();
         assert_eq!(vars.get("tid").unwrap(), "acme");
     }
 
     #[test]
-    fn mapping_requires_header_present() {
-        let m = mapping(
+    fn rule_requires_header_present() {
+        let m = rule(
             Some("/api"),
             Some(&["GET"]),
             Some(vec![var_entity("x-token", "tok")]),
             None,
         );
-        assert!(check_mapping(&m, "/api", "GET", no_header, no_query).is_none());
-        let result = check_mapping(
+        assert!(check_rule(&m, "/api", "GET", no_header, no_query).is_none());
+        let result = check_rule(
             &m,
             "/api",
             "GET",
@@ -303,14 +303,14 @@ mod tests {
     }
 
     #[test]
-    fn mapping_literal_header_rejects_wrong_value() {
-        let m = mapping(
+    fn rule_literal_header_rejects_wrong_value() {
+        let m = rule(
             Some("/api"),
             Some(&["GET"]),
             Some(vec![literal_entity("x-version", "v2")]),
             None,
         );
-        let result = check_mapping(
+        let result = check_rule(
             &m,
             "/api",
             "GET",
@@ -323,14 +323,14 @@ mod tests {
     }
 
     #[test]
-    fn mapping_literal_header_accepts_matching_value() {
-        let m = mapping(
+    fn rule_literal_header_accepts_matching_value() {
+        let m = rule(
             Some("/api"),
             Some(&["GET"]),
             Some(vec![literal_entity("x-version", "v2")]),
             None,
         );
-        let result = check_mapping(
+        let result = check_rule(
             &m,
             "/api",
             "GET",
@@ -343,15 +343,15 @@ mod tests {
     }
 
     #[test]
-    fn mapping_requires_query_param() {
-        let m = mapping(
+    fn rule_requires_query_param() {
+        let m = rule(
             Some("/search"),
             Some(&["GET"]),
             None,
             Some(vec![var_entity("q", "query")]),
         );
-        assert!(check_mapping(&m, "/search", "GET", no_header, no_query).is_none());
-        let result = check_mapping(&m, "/search", "GET", no_header, |q| {
+        assert!(check_rule(&m, "/search", "GET", no_header, no_query).is_none());
+        let result = check_rule(&m, "/search", "GET", no_header, |q| {
             if q == "q" { Some("rust".into()) } else { None }
         });
         assert!(result.is_some());
@@ -359,36 +359,36 @@ mod tests {
     }
 
     #[test]
-    fn mapping_literal_query_rejects_wrong_value() {
-        let m = mapping(
+    fn rule_literal_query_rejects_wrong_value() {
+        let m = rule(
             Some("/api"),
             Some(&["GET"]),
             None,
             Some(vec![literal_entity("format", "json")]),
         );
-        let result = check_mapping(&m, "/api", "GET", no_header, |q| {
+        let result = check_rule(&m, "/api", "GET", no_header, |q| {
             if q == "format" { Some("xml".into()) } else { None }
         });
         assert!(result.is_none());
     }
 
     #[test]
-    fn mapping_injects_path_and_method() {
-        let m = mapping(Some("/api"), Some(&["POST"]), None, None);
-        let vars = check_mapping(&m, "/api", "POST", no_header, no_query).unwrap();
+    fn rule_injects_path_and_method() {
+        let m = rule(Some("/api"), Some(&["POST"]), None, None);
+        let vars = check_rule(&m, "/api", "POST", no_header, no_query).unwrap();
         assert_eq!(vars.get("path").unwrap(), "/api");
         assert_eq!(vars.get("method").unwrap(), "POST");
     }
 
     #[test]
-    fn mapping_all_conditions_none_matches_everything() {
-        let m = mapping(None, None, None, None);
-        let result = check_mapping(&m, "/any/path", "PATCH", no_header, no_query);
+    fn rule_all_conditions_none_matches_everything() {
+        let m = rule(None, None, None, None);
+        let result = check_rule(&m, "/any/path", "PATCH", no_header, no_query);
         assert!(result.is_some());
     }
 
     #[test]
-    fn mapping_combines_path_and_header_variables() {
+    fn rule_combines_path_and_header_variables() {
         let m = Rule {
             name: "test".into(),
             request: RequestMatch {
@@ -404,7 +404,7 @@ mod tests {
                 verb: Binding::Literal("v".into()),
             },
         };
-        let vars = check_mapping(
+        let vars = check_rule(
             &m,
             "/tenants/acme/data",
             "POST",

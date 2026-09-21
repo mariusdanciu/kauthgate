@@ -49,7 +49,7 @@ src/
 
 1. Client sends request with `Bearer` token
 2. `kube::auth` validates token via TokenReview
-3. Policy module matches request against configured mappings
+3. Policy module matches request against configured rules
 4. Variables extracted from headers/path/query
 5. SubjectAccessReview issued with resolved resource attributes
 6. Request proxied upstream or rejected (401/403)

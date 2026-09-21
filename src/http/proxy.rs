@@ -1,5 +1,5 @@
 use crate::config::ProxyConfig;
-use crate::http::policy::check_mapping;
+use crate::http::policy::check_rule;
 use crate::kube::auth::KubeAuthClient;
 use crate::utils::proxy::compile_resource_attributes;
 use crate::utils::proxy::get_header;
@@ -56,7 +56,7 @@ impl ProxyHttp for HttpProxy {
             Ok(auth_info) => {
                 let query_map: OnceCell<HashMap<&str, &str>> = OnceCell::new();
                 for policy in &self.config.http.rules {
-                    if let Some(vars) = check_mapping(
+                    if let Some(vars) = check_rule(
                         policy,
                         path,
                         method,

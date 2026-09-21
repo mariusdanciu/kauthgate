@@ -1,5 +1,5 @@
 use crate::config::ProxyConfig;
-use crate::grpc::policy::check_mapping;
+use crate::grpc::policy::check_rule;
 use crate::kube::auth::KubeAuthClient;
 use crate::utils::proxy::compile_resource_attributes;
 use crate::utils::proxy::get_header;
@@ -61,7 +61,7 @@ impl ProxyHttp for GrpcProxy {
         match auth_info {
             Ok(auth_info) => {
                 for policy in &self.config.grpc.rules {
-                    if let Some(vars) = check_mapping(policy, service, action, |header| get_header(session, header)) {
+                    if let Some(vars) = check_rule(policy, service, action, |header| get_header(session, header)) {
                         let resource_attributes = compile_resource_attributes(&policy.sar_resource_attributes, &vars);
 
                         let resp = self.client.authorize(&auth_info, &resource_attributes).await;
