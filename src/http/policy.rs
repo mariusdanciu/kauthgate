@@ -1,0 +1,375 @@
+use crate::config::defs::Binding;
+use crate::config::http::RBACMapping;
+use std::collections::HashMap;
+use tracing::info;
+
+fn check_path(
+    mapping_path: &Vec<Binding>,
+    request_path: &Vec<String>,
+) -> Option<HashMap<String, String>> {
+    let mut variables = HashMap::new();
+    let m_len = mapping_path.len();
+    let r_len = request_path.len();
+
+    let last_is_any = mapping_path[m_len - 1] == Binding::Literal("**".to_string())
+        || mapping_path[m_len - 1] == Binding::Variable("*".to_string());
+
+    if m_len == r_len + 1 && !last_is_any {
+        return None;
+    }
+    if m_len > r_len + 1 {
+        return None;
+    }
+
+    for (i, segment) in mapping_path.iter().enumerate() {
+        match segment {
+            Binding::Variable(var) => {
+                variables.insert(var.to_string(), request_path[i].to_string());
+            }
+            Binding::Literal(literal) => {
+                if literal == "*" {
+                    continue;
+                } else if literal == "**" {
+                    return Some(variables);
+                }
+                if request_path[i] != *literal {
+                    return None;
+                }
+            }
+        }
+    }
+    Some(variables)
+}
+
+pub(crate) fn check_mapping(
+    policy: &RBACMapping,
+    path: &String,
+    method: &String,
+    get_header: impl Fn(&str) -> Option<String>,
+    get_query: impl Fn(&str) -> Option<String>,
+) -> Option<HashMap<String, String>> {
+    let mut variables = HashMap::new();
+
+    let parts: Vec<String> = path
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect();
+
+    if let Some(mapping_path) = &policy.conditions.path {
+        if let Some(p_vars) = check_path(mapping_path, &parts) {
+            variables.extend(p_vars);
+        } else {
+            info!("Path does not match mapping path {:?} {:?}", path, mapping_path);
+            return None;
+        }
+    }
+
+    if let Some(methods) = &policy.conditions.methods {
+        if !methods.contains(method) {
+            return None;
+        }
+    }
+
+    if let Some(headers) = &policy.conditions.headers {
+        for header in headers {
+            let value = get_header(header.name.as_str());
+
+            if let Some(value) = value {
+                match &header.value {
+                    Binding::Variable(var) => {
+                        variables.insert(var.to_string(), value);
+                    }
+                    Binding::Literal(literal) => {
+                        if value != *literal {
+                            return None;
+                        }
+                    }
+                }
+            } else {
+                return None;
+            }
+        }
+    }
+
+    if let Some(query_params) = &policy.conditions.query_params {
+        for query in query_params {
+            let value = get_query(query.name.as_str());
+
+            if let Some(value) = value {
+                match &query.value {
+                    Binding::Variable(var) => {
+                        variables.insert(var.to_string(), value);
+                    }
+                    Binding::Literal(literal) => {
+                        if value != *literal {
+                            return None;
+                        }
+                    }
+                }
+            } else {
+                return None;
+            }
+        }
+    }
+
+
+    variables.insert("path".into(), path.to_string());
+    variables.insert("method".into(), method.to_string());
+    Some(variables)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::defs::{Binding, Entity, SARAttributes};
+    use crate::config::http::{Conditions, RBACMapping};
+
+    fn segments(path: &str) -> Vec<String> {
+        path.split('/').filter(|s| !s.is_empty()).map(|s| s.to_string()).collect()
+    }
+
+    fn path_bindings(parts: &[&str]) -> Vec<Binding> {
+        parts.iter().map(|s| Binding::from_str(s)).collect()
+    }
+
+    fn no_header(_: &str) -> Option<String> { None }
+    fn no_query(_: &str) -> Option<String> { None }
+
+    fn mapping(
+        path: Option<&str>,
+        methods: Option<&[&str]>,
+        headers: Option<Vec<Entity>>,
+        query_params: Option<Vec<Entity>>,
+    ) -> RBACMapping {
+        RBACMapping {
+            name: "test".into(),
+            conditions: Conditions {
+                path: path.map(|p| path_bindings(&segments(p).iter().map(|s| s.as_str()).collect::<Vec<_>>())),
+                methods: methods.map(|m| m.iter().map(|s| s.to_string()).collect()),
+                headers,
+                query_params,
+            },
+            sar_resource_attributes: SARAttributes {
+                namespace: Binding::Literal("ns".into()),
+                api_group: Binding::Literal("g".into()),
+                resource: Binding::Literal("r".into()),
+                verb: Binding::Literal("v".into()),
+            },
+        }
+    }
+
+    fn var_entity(name: &str, var: &str) -> Entity {
+        Entity { name: name.into(), value: Binding::Variable(var.into()) }
+    }
+
+    fn literal_entity(name: &str, literal: &str) -> Entity {
+        Entity { name: name.into(), value: Binding::Literal(literal.into()) }
+    }
+
+    // -- check_path tests --
+
+    #[test]
+    fn path_exact_match() {
+        let result = check_path(&path_bindings(&["api", "v1", "users"]), &segments("/api/v1/users"));
+        assert!(result.is_some());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn path_mismatch() {
+        let result = check_path(&path_bindings(&["api", "v2", "users"]), &segments("/api/v1/users"));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn path_variable_extraction() {
+        let result = check_path(
+            &path_bindings(&["api", "{version}", "tenants", "{tid}"]),
+            &segments("/api/v1/tenants/acme"),
+        );
+        let vars = result.unwrap();
+        assert_eq!(vars.get("version").unwrap(), "v1");
+        assert_eq!(vars.get("tid").unwrap(), "acme");
+    }
+
+    #[test]
+    fn path_wildcard_matches_any_segment() {
+        let result = check_path(&path_bindings(&["api", "*", "users"]), &segments("/api/v1/users"));
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn path_wildcard_does_not_match_different_suffix() {
+        let result = check_path(&path_bindings(&["api", "*", "users"]), &segments("/api/v1/items"));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn path_globstar_matches_everything_after() {
+        let result = check_path(&path_bindings(&["api", "**"]), &segments("/api/v1/users/123/profile"));
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn path_shorter_request_rejected() {
+        let result = check_path(&path_bindings(&["api", "v1", "users"]), &segments("/api"));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn path_longer_request_accepted_when_pattern_shorter() {
+        let result = check_path(&path_bindings(&["api", "v1"]), &segments("/api/v1/users/extra"));
+        assert!(result.is_some());
+    }
+
+    // -- check_mapping tests --
+
+    #[test]
+    fn mapping_matches_path_and_method() {
+        let m = mapping(Some("/api/v1/users"), Some(&["GET"]), None, None);
+        let result = check_mapping(&m, &"/api/v1/users".into(), &"GET".into(), no_header, no_query);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn mapping_rejects_wrong_method() {
+        let m = mapping(Some("/api/v1/users"), Some(&["GET"]), None, None);
+        let result = check_mapping(&m, &"/api/v1/users".into(), &"POST".into(), no_header, no_query);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn mapping_rejects_wrong_path() {
+        let m = mapping(Some("/api/v1/users"), Some(&["GET"]), None, None);
+        let result = check_mapping(&m, &"/api/v2/items".into(), &"GET".into(), no_header, no_query);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn mapping_no_methods_accepts_any() {
+        let m = mapping(Some("/api"), None, None, None);
+        let result = check_mapping(&m, &"/api".into(), &"DELETE".into(), no_header, no_query);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn mapping_no_path_accepts_any() {
+        let m = mapping(None, Some(&["GET"]), None, None);
+        let result = check_mapping(&m, &"/anything/here".into(), &"GET".into(), no_header, no_query);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn mapping_extracts_path_variables() {
+        let m = RBACMapping {
+            name: "test".into(),
+            conditions: Conditions {
+                path: Some(path_bindings(&["tenants", "{tid}", "resources"])),
+                methods: None,
+                headers: None,
+                query_params: None,
+            },
+            sar_resource_attributes: SARAttributes {
+                namespace: Binding::Variable("tid".into()),
+                api_group: Binding::Literal("g".into()),
+                resource: Binding::Literal("r".into()),
+                verb: Binding::Literal("v".into()),
+            },
+        };
+        let vars = check_mapping(&m, &"/tenants/acme/resources".into(), &"GET".into(), no_header, no_query).unwrap();
+        assert_eq!(vars.get("tid").unwrap(), "acme");
+    }
+
+    #[test]
+    fn mapping_requires_header_present() {
+        let m = mapping(Some("/api"), Some(&["GET"]), Some(vec![var_entity("x-token", "tok")]), None);
+        assert!(check_mapping(&m, &"/api".into(), &"GET".into(), no_header, no_query).is_none());
+        let result = check_mapping(&m, &"/api".into(), &"GET".into(), |h| {
+            if h == "x-token" { Some("abc".into()) } else { None }
+        }, no_query);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().get("tok").unwrap(), "abc");
+    }
+
+    #[test]
+    fn mapping_literal_header_rejects_wrong_value() {
+        let m = mapping(Some("/api"), Some(&["GET"]), Some(vec![literal_entity("x-version", "v2")]), None);
+        let result = check_mapping(&m, &"/api".into(), &"GET".into(), |h| {
+            if h == "x-version" { Some("v1".into()) } else { None }
+        }, no_query);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn mapping_literal_header_accepts_matching_value() {
+        let m = mapping(Some("/api"), Some(&["GET"]), Some(vec![literal_entity("x-version", "v2")]), None);
+        let result = check_mapping(&m, &"/api".into(), &"GET".into(), |h| {
+            if h == "x-version" { Some("v2".into()) } else { None }
+        }, no_query);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn mapping_requires_query_param() {
+        let m = mapping(Some("/search"), Some(&["GET"]), None, Some(vec![var_entity("q", "query")]));
+        assert!(check_mapping(&m, &"/search".into(), &"GET".into(), no_header, no_query).is_none());
+        let result = check_mapping(&m, &"/search".into(), &"GET".into(), no_header, |q| {
+            if q == "q" { Some("rust".into()) } else { None }
+        });
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().get("query").unwrap(), "rust");
+    }
+
+    #[test]
+    fn mapping_literal_query_rejects_wrong_value() {
+        let m = mapping(Some("/api"), Some(&["GET"]), None, Some(vec![literal_entity("format", "json")]));
+        let result = check_mapping(&m, &"/api".into(), &"GET".into(), no_header, |q| {
+            if q == "format" { Some("xml".into()) } else { None }
+        });
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn mapping_injects_path_and_method() {
+        let m = mapping(Some("/api"), Some(&["POST"]), None, None);
+        let vars = check_mapping(&m, &"/api".into(), &"POST".into(), no_header, no_query).unwrap();
+        assert_eq!(vars.get("path").unwrap(), "/api");
+        assert_eq!(vars.get("method").unwrap(), "POST");
+    }
+
+    #[test]
+    fn mapping_all_conditions_none_matches_everything() {
+        let m = mapping(None, None, None, None);
+        let result = check_mapping(&m, &"/any/path".into(), &"PATCH".into(), no_header, no_query);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn mapping_combines_path_and_header_variables() {
+        let m = RBACMapping {
+            name: "test".into(),
+            conditions: Conditions {
+                path: Some(path_bindings(&["tenants", "{tid}", "data"])),
+                methods: Some(vec!["POST".into()]),
+                headers: Some(vec![var_entity("x-request-id", "rid")]),
+                query_params: None,
+            },
+            sar_resource_attributes: SARAttributes {
+                namespace: Binding::Variable("tid".into()),
+                api_group: Binding::Literal("g".into()),
+                resource: Binding::Literal("r".into()),
+                verb: Binding::Literal("v".into()),
+            },
+        };
+        let vars = check_mapping(
+            &m,
+            &"/tenants/acme/data".into(),
+            &"POST".into(),
+            |h| if h == "x-request-id" { Some("req-123".into()) } else { None },
+            no_query,
+        ).unwrap();
+        assert_eq!(vars.get("tid").unwrap(), "acme");
+        assert_eq!(vars.get("rid").unwrap(), "req-123");
+    }
+}

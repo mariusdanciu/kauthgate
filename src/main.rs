@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use grpc::proxy::GrpcProxy;
+use http::proxy::HttpProxy;
 use kube::auth::KubeAuthClient;
 use logging::init_tracing;
 use pingora::prelude::*;
@@ -11,6 +12,7 @@ use tracing::info;
 
 mod config;
 mod grpc;
+mod http;
 mod kube;
 mod logging;
 mod utils;
@@ -45,19 +47,23 @@ fn main() -> Result<()> {
         config.auth.token_review_audiences.clone(),
     );
 
+    let config = Arc::new(config);
+
     let mut server = Server::new(None).unwrap();
     server.bootstrap();
 
-    let grpc_proxy = GrpcProxy::new(Arc::new(config), kube_auth);
-
-    let mut proxy = http_proxy_service(&server.configuration, grpc_proxy);
-
+    let grpc_proxy = GrpcProxy::new(config.clone(), kube_auth.clone());
+    let mut grpc_service = http_proxy_service(&server.configuration, grpc_proxy);
     let mut h2c_options = pingora::apps::HttpServerOptions::default();
     h2c_options.h2c = true;
-    proxy.app_logic_mut().unwrap().server_options = Some(h2c_options);
+    grpc_service.app_logic_mut().unwrap().server_options = Some(h2c_options);
+    grpc_service.add_tcp("0.0.0.0:6188");
+    server.add_service(grpc_service);
 
-    proxy.add_tcp("0.0.0.0:6188");
+    let http_proxy = HttpProxy::new(config.clone(), kube_auth);
+    let mut http_service = http_proxy_service(&server.configuration, http_proxy);
+    http_service.add_tcp("0.0.0.0:8080");
+    server.add_service(http_service);
 
-    server.add_service(proxy);
     server.run_forever();
 }

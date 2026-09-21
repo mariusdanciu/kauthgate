@@ -1,32 +1,29 @@
+use crate::config::grpc::GrpcConfig;
+use crate::config::http::HttpConfig;
 use anyhow::Result;
 use config::{Config, File};
 use serde::{Deserialize, Deserializer};
-use crate::config::grpc::GrpcConfig;
-
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-pub enum Extractor {
-    Header {
-        name: String,
-        header: String,
-    },
-    Path {
-        #[serde(deserialize_with = "deserialize_path_segments")]
-        path: Vec<String>,
-    },
-    Query {
-        name: String,
-        parameter: String,
-    },
+pub struct Entity {
+    pub name: String,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub value: Binding,
 }
-
-
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub enum Binding {
     Variable(String),
     Literal(String),
+}
+
+impl Binding {
+    pub fn from_str(s: &str) -> Self {
+        if let Some(inner) = s.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
+            return Binding::Variable(inner.trim().to_string());
+        }
+        Binding::Literal(s.to_string())
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -41,8 +38,6 @@ pub struct SARAttributes {
     #[serde(deserialize_with = "deserialize_binding")]
     pub verb: Binding,
 }
-
-
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Upstream {
@@ -60,9 +55,9 @@ pub struct AuthConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProxyConfig {
-    pub upstream: Upstream,
     pub auth: AuthConfig,
     pub grpc: GrpcConfig,
+    pub http: HttpConfig,
 }
 
 pub fn load_config(config_file: String, secret_config_file: String) -> Result<ProxyConfig> {
@@ -75,18 +70,7 @@ pub fn load_config(config_file: String, secret_config_file: String) -> Result<Pr
     Ok(config)
 }
 
-fn deserialize_path_segments<'de, D>(deserializer: D) -> std::result::Result<Vec<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    Ok(s.split('/')
-        .filter(|seg| !seg.is_empty())
-        .map(|seg| seg.to_string())
-        .collect())
-}
-
-fn deserialize_binding<'de, D>(deserializer: D) -> std::result::Result<Binding, D::Error>
+pub(crate) fn deserialize_binding<'de, D>(deserializer: D) -> std::result::Result<Binding, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -102,7 +86,6 @@ where
     }
     Ok(Binding::Literal(s))
 }
-
 
 ///----------------------------------------
 /// Tests
@@ -121,9 +104,6 @@ mod tests {
     }
 
     const FULL_CONFIG: &str = r#"
-upstream:
-  host: 127.0.0.1
-  port: 50051
 
 auth:
   cache-ttl-secs: 300
@@ -131,156 +111,148 @@ auth:
     - aud1
 
 grpc:
-  extractors:
-    - name: tenant-id
-      header: x-tenant-id
-    - path: /svc/{arg1}/sub/{arg2}
-  auth-policies:
+  upstream:
+    host: 127.0.0.1
+    port: 50051
+  mappings:
     - name: flight
       conditions:
         service: arrow.flight.protocol.FlightService
-        allowed-actions:
+        grpc-methods:
           - DoAction
           - DoGet
-        required-headers:
-          - x-tenant-id
-      resource-attributes:
+        headers:
+          - name: x-tenant-id
+            value: "{tenant-id}"
+      sar-resource-attributes:
         namespace: "{tenant-id}"
         api-group: example.io
         resource: widgets
         verb: get
+
+http:
+  upstream:
+    host: 127.0.0.1
+    port: 8081
+  mappings: []
 "#;
 
     #[test]
     fn deserializes_full_config() {
         let cfg = parse_yaml(FULL_CONFIG);
-        assert_eq!(cfg.upstream.host, "127.0.0.1");
-        assert_eq!(cfg.upstream.port, 50051);
+        assert_eq!(cfg.grpc.upstream.host, "127.0.0.1");
+        assert_eq!(cfg.grpc.upstream.port, 50051);
         assert_eq!(cfg.auth.cache_ttl_secs, 300);
         assert_eq!(cfg.auth.token_review_audiences, vec!["aud1"]);
     }
 
     #[test]
-    fn deserializes_header_extractor() {
-        let cfg = parse_yaml(FULL_CONFIG);
-        let ext = &cfg.grpc.extractors[0];
-        match ext {
-            Extractor::Header { name, header } => {
-                assert_eq!(name, "tenant-id");
-                assert_eq!(header, "x-tenant-id");
-            }
-            other => panic!("expected Header extractor, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn deserializes_path_extractor_splits_segments() {
-        let cfg = parse_yaml(FULL_CONFIG);
-        let ext = &cfg.grpc.extractors[1];
-        match ext {
-            Extractor::Path { path } => {
-                assert_eq!(path, &vec!["svc", "{arg1}", "sub", "{arg2}"]);
-            }
-            other => panic!("expected Path extractor, got {:?}", other),
-        }
-    }
-
-    #[test]
     fn deserializes_auth_policy() {
         let cfg = parse_yaml(FULL_CONFIG);
-        let policy = &cfg.grpc.auth_policies[0];
+        let policy = &cfg.grpc.mappings[0];
         assert_eq!(policy.name, "flight");
         assert_eq!(
-            policy.conditions.service,
-            "arrow.flight.protocol.FlightService"
+            policy.conditions.service.as_deref(),
+            Some("arrow.flight.protocol.FlightService")
         );
-        assert_eq!(policy.conditions.allowed_actions, vec!["DoAction", "DoGet"]);
-        assert_eq!(policy.conditions.required_headers, vec!["x-tenant-id"]);
-        assert_eq!(policy.resource_attributes.namespace, Binding::Variable("tenant-id".into()));
-        assert_eq!(policy.resource_attributes.api_group, Binding::Literal("example.io".into()));
-        assert_eq!(policy.resource_attributes.resource, Binding::Literal("widgets".into()));
-        assert_eq!(policy.resource_attributes.verb, Binding::Literal("get".into()));
+        assert_eq!(
+            policy.conditions.grpc_methods,
+            Some(vec!["DoAction".into(), "DoGet".into()])
+        );
+        let headers = policy.conditions.headers.as_ref().unwrap();
+        assert_eq!(headers.len(), 1);
+        assert_eq!(headers[0].name, "x-tenant-id");
+        assert_eq!(headers[0].value, Binding::Variable("tenant-id".into()));
+        assert_eq!(
+            policy.sar_resource_attributes.namespace,
+            Binding::Variable("tenant-id".into())
+        );
+        assert_eq!(
+            policy.sar_resource_attributes.api_group,
+            Binding::Literal("example.io".into())
+        );
+        assert_eq!(
+            policy.sar_resource_attributes.resource,
+            Binding::Literal("widgets".into())
+        );
+        assert_eq!(
+            policy.sar_resource_attributes.verb,
+            Binding::Literal("get".into())
+        );
     }
 
     #[test]
     fn deserializes_empty_audiences() {
         let yaml = r#"
-upstream:
-  host: localhost
-  port: 8080
 auth:
   cache-ttl-secs: 60
   token-review-audiences: []
 grpc:
-  extractors: []
-  auth-policies: []
+  upstream:
+    host: localhost
+    port: 50051
+  mappings: []
+http:
+  upstream:
+    host: localhost
+    port: 8081
+  mappings: []
 "#;
         let cfg = parse_yaml(yaml);
         assert!(cfg.auth.token_review_audiences.is_empty());
-        assert!(cfg.grpc.extractors.is_empty());
-        assert!(cfg.grpc.auth_policies.is_empty());
-    }
-
-    #[test]
-    fn deserializes_path_extractor_with_leading_slash() {
-        let yaml = r#"
-upstream:
-  host: localhost
-  port: 8080
-auth:
-  cache-ttl-secs: 60
-  token-review-audiences: []
-grpc:
-  extractors:
-    - path: /{a}/{b}/{c}
-  auth-policies: []
-"#;
-        let cfg = parse_yaml(yaml);
-        match &cfg.grpc.extractors[0] {
-            Extractor::Path { path } => {
-                assert_eq!(path, &vec!["{a}", "{b}", "{c}"]);
-            }
-            other => panic!("expected Path extractor, got {:?}", other),
-        }
+        assert!(cfg.grpc.mappings.is_empty());
     }
 
     fn parse_binding(value: &str) -> Binding {
         let yaml = format!(
             r#"
-upstream:
-  host: localhost
-  port: 8080
 auth:
   cache-ttl-secs: 60
   token-review-audiences: []
 grpc:
-  extractors: []
-  auth-policies:
+  upstream:
+    host: localhost
+    port: 8080
+  mappings:
     - name: test
       conditions:
         service: svc
-        allowed-actions: []
-        required-headers: []
-      resource-attributes:
+        grpc-methods: []
+        headers: []
+      sar-resource-attributes:
         namespace: "{value}"
         api-group: g
         resource: r
         verb: v
+http:
+  upstream:
+    host: localhost
+    port: 8081
+  mappings: []
 "#,
             value = value
         );
         let cfg = parse_yaml(&yaml);
-        cfg.grpc.auth_policies[0].resource_attributes.namespace.clone()
+        cfg.grpc.mappings[0]
+            .sar_resource_attributes
+            .namespace
+            .clone()
     }
 
     #[test]
     fn binding_variable_from_braces() {
-        assert_eq!(parse_binding("{tenant}"), Binding::Variable("tenant".into()));
+        assert_eq!(
+            parse_binding("{tenant}"),
+            Binding::Variable("tenant".into())
+        );
     }
 
     #[test]
     fn binding_literal_from_plain_string() {
-        assert_eq!(parse_binding("my-namespace"), Binding::Literal("my-namespace".into()));
+        assert_eq!(
+            parse_binding("my-namespace"),
+            Binding::Literal("my-namespace".into())
+        );
     }
 
     #[test]
@@ -305,31 +277,9 @@ grpc:
 
     #[test]
     fn binding_nested_braces() {
-        assert_eq!(parse_binding("{{inner}}"), Binding::Variable("{inner}".into()));
-    }
-
-    #[test]
-    fn deserializes_query_extractor() {
-        let yaml = r#"
-upstream:
-  host: localhost
-  port: 8080
-auth:
-  cache-ttl-secs: 60
-  token-review-audiences: []
-grpc:
-  extractors:
-    - name: page-size
-      parameter: pageSize
-  auth-policies: []
-"#;
-        let cfg = parse_yaml(yaml);
-        match &cfg.grpc.extractors[0] {
-            Extractor::Query { name, parameter } => {
-                assert_eq!(name, "page-size");
-                assert_eq!(parameter, "pageSize");
-            }
-            other => panic!("expected Query extractor, got {:?}", other),
-        }
+        assert_eq!(
+            parse_binding("{{inner}}"),
+            Binding::Variable("{inner}".into())
+        );
     }
 }

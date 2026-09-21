@@ -1,6 +1,3 @@
-upstream:
-  host: 127.0.0.1
-  port: 50051
 
 server:
   host: 0.0.0.0
@@ -14,22 +11,45 @@ auth:
   token-review-audiences: []
 
 grpc:
-  extractors:
-    - name: tenant-id
-      header: x-tenant-id
- 
-  auth-policies:
+  upstream:
+    host: 127.0.0.1
+    port: 50051
+  mappings:
     - name: flight
       conditions:
         service: arrow.flight.protocol.FlightService
-        allowed-actions:
+        grpc-methods:
           - DoAction
           - DoGet
           - GetFlightInfo
-        required-headers:
-          - x-tenant-id
-      resource-attributes:
+        headers:
+          - name: "x-tenant-id"
+            value: "{tenant-id}"
+
+      sar-resource-attributes:
         namespace: "{tenant-id}"
         api-group: dataconnecthub.opendatahub.io
         resource: data-store
         verb: "get"
+
+http:
+  upstream:
+    host: 127.0.0.1
+    port: 8081
+  mappings:
+    - name: rest
+      conditions:
+        path: /api/v1alpha1/data/connections
+        headers:
+          - name: "x-tenant-id"
+            value: "{tenant-id}"
+        methods:
+          - post
+
+      sar-resource-attributes:
+        namespace: "{tenant-id}"
+        api-group: dataconnecthub.opendatahub.io
+        resource: data-connections
+        verb: "create"
+
+

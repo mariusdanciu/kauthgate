@@ -1,27 +1,29 @@
 use serde::Deserialize;
 
-use crate::config::defs::{Extractor, SARAttributes};
+use crate::config::defs::Entity;
+use crate::config::defs::SARAttributes;
+use crate::config::defs::Upstream;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Conditions {
-    pub service: String,
-    #[serde(rename = "allowed-actions")]
-    pub allowed_actions: Vec<String>,
-    #[serde(rename = "required-headers")]
-    pub required_headers: Vec<String>,
+    #[serde(default)]
+    pub service: Option<String>,
+    #[serde(rename = "grpc-methods", default)]
+    pub grpc_methods: Option<Vec<String>>,
+    #[serde(default)]
+    pub headers: Option<Vec<Entity>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct AuthPolicy {
+pub struct RBACMapping {
     pub name: String,
     pub conditions: Conditions,
-    #[serde(rename = "resource-attributes")]
-    pub resource_attributes: SARAttributes,
+    #[serde(rename = "sar-resource-attributes")]
+    pub sar_resource_attributes: SARAttributes,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GrpcConfig {
-    pub extractors: Vec<Extractor>,
-    #[serde(rename = "auth-policies")]
-    pub auth_policies: Vec<AuthPolicy>,
+    pub upstream: Upstream,
+    pub mappings: Vec<RBACMapping>,
 }

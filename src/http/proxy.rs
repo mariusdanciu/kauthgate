@@ -1,5 +1,5 @@
 use crate::config::ProxyConfig;
-use crate::grpc::policy::check_mapping;
+use crate::http::policy::check_mapping;
 use crate::kube::auth::KubeAuthClient;
 use crate::utils::policy::compile_resource_attributes;
 use crate::utils::proxy::get_header;
@@ -10,61 +10,65 @@ use pingora::proxy::{ProxyHttp, Session};
 use std::sync::Arc;
 use tracing::{error, info};
 
-pub struct GrpcProxy {
+pub struct HttpProxy {
     client: KubeAuthClient,
     config: Arc<ProxyConfig>,
 }
 
-impl GrpcProxy {
+impl HttpProxy {
     pub fn new(config: Arc<ProxyConfig>, client: KubeAuthClient) -> Self {
         Self { config, client }
     }
 
     async fn error_response(
         &self,
-        status_code: u8,
+        status_code: u16,
         message: &str,
         session: &mut Session,
     ) -> Result<bool> {
-        let mut resp = ResponseHeader::build(200, Some(2))?;
-        resp.insert_header("content-type", "application/grpc")?;
+        let resp = ResponseHeader::build(status_code, Some(1))?;
         session.write_response_header(Box::new(resp), false).await?;
-
-        let mut trailers = pingora::http::HMap::new();
-        trailers.insert("grpc-status", status_code.to_string().parse().unwrap());
-        trailers.insert("grpc-message", message.parse().unwrap());
-        session
-            .downstream_session
-            .write_response_trailers(trailers)
-            .await?;
+        let body: Vec<u8> = message.as_bytes().to_vec();
+        session.write_response_body(Some(body.into()), true).await?;
         Ok(true)
     }
 }
 
 #[async_trait]
-impl ProxyHttp for GrpcProxy {
+impl ProxyHttp for HttpProxy {
     type CTX = ();
 
     fn new_ctx(&self) -> Self::CTX {}
 
     async fn request_filter(&self, session: &mut Session, _ctx: &mut Self::CTX) -> Result<bool> {
-        info!("request_filter");
-        let path = session.req_header().uri.path();
+        let path = session.req_header().uri.path().to_string();
+        let method = session.req_header().method.to_string().to_lowercase();
 
         let authorization = get_header(session, "authorization").unwrap_or("".to_string());
 
         let bearer_token = authorization.strip_prefix("Bearer ").unwrap_or("");
 
-        let (service, action) = parse_grpc_path(path);
-
         let auth_info = self.client.authenticate(bearer_token).await;
 
         match auth_info {
             Ok(auth_info) => {
-                for policy in &self.config.grpc.mappings {
-                    if let Some(vars) = check_mapping(policy, service, action, |header| {
-                        get_header(session, header)
-                    }) {
+                for policy in &self.config.http.mappings {
+                    if let Some(vars) = check_mapping(
+                        policy,
+                        &path,
+                        &method,
+                        |header| {
+                            get_header(session, header)
+                        },
+                        |param| {
+                            session.req_header().uri.query().and_then(|q| {
+                                q.split('&')
+                                    .filter_map(|pair| pair.split_once('='))
+                                    .find(|(k, _)| *k == param)
+                                    .map(|(_, v)| v.to_string())
+                            })
+                        },
+                    ) {
                         let resource_attributes =
                             compile_resource_attributes(&policy.sar_resource_attributes, &vars);
 
@@ -75,19 +79,19 @@ impl ProxyHttp for GrpcProxy {
 
                         if let Err(e) = resp {
                             error!("authorization failed: {:?}", e);
-                            return self.error_response(16, &e.to_string(), session).await;
+                            return self.error_response(403, &e.to_string(), session).await;
                         }
-                        return Ok(false); // Successfully authorized. Continue to upstream.
+                        return Ok(false);
                     } else {
                         info!("policy does not match: {:?}", policy.name);
                     }
                 }
 
-                return self.error_response(16, "no policy matched", session).await;
+                return self.error_response(403, "no policy matched", session).await;
             }
             Err(e) => {
                 error!("authentication failed: {:?}", e);
-                return self.error_response(16, &e.to_string(), session).await;
+                return self.error_response(401, &e.to_string(), session).await;
             }
         }
     }
@@ -97,20 +101,14 @@ impl ProxyHttp for GrpcProxy {
         _session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> Result<Box<HttpPeer>> {
-        let mut peer = HttpPeer::new(
+        let peer = HttpPeer::new(
             (
-                self.config.grpc.upstream.host.clone(),
-                self.config.grpc.upstream.port,
+                self.config.http.upstream.host.clone(),
+                self.config.http.upstream.port,
             ),
             false,
             String::new(),
         );
-        peer.options.set_http_version(2, 2);
         Ok(Box::new(peer))
     }
-}
-
-fn parse_grpc_path(path: &str) -> (&str, &str) {
-    let trimmed = path.strip_prefix('/').unwrap_or(path);
-    trimmed.rsplit_once('/').unwrap_or((trimmed, ""))
 }

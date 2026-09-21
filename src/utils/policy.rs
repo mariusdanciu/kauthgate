@@ -1,10 +1,9 @@
 use crate::config::Binding;
-use crate::config::Extractor;
 use crate::config::SARAttributes;
 use k8s_openapi::api::authorization::v1::ResourceAttributes;
 use std::collections::HashMap;
 
-fn resolve(value: &Binding, variables: &HashMap<&str, String>) -> Option<String> {
+fn resolve(value: &Binding, variables: &HashMap<String, String>) -> Option<String> {
     match value {
         Binding::Variable(name) => variables.get(name.as_str()).map(|s| s.to_string()),
         Binding::Literal(value) => Some(value.to_string()),
@@ -13,7 +12,7 @@ fn resolve(value: &Binding, variables: &HashMap<&str, String>) -> Option<String>
 
 pub(crate) fn compile_resource_attributes(
     resource_attributes: &SARAttributes,
-    variables: &HashMap<&str, String>,
+    variables: &HashMap<String, String>,
 ) -> ResourceAttributes {
     let namespace = resolve(&resource_attributes.namespace, variables);
     let group = resolve(&resource_attributes.api_group, variables);
@@ -27,40 +26,6 @@ pub(crate) fn compile_resource_attributes(
         verb: verb,
         ..Default::default()
     }
-}
-
-pub(crate) fn extract_variables<'a>(
-    extractors: &'a [Extractor],
-    req_path: &str,
-    header_fn: impl Fn(&str) -> Option<String>,
-    query_fn: impl Fn(&str) -> Option<String>,
-) -> HashMap<&'a str, String> {
-    let mut variables = HashMap::new();
-    for extractor in extractors {
-        match extractor {
-            Extractor::Header { name, header } => {
-                if let Some(value) = header_fn(header) {
-                    variables.insert(name.as_str(), value);
-                }
-            }
-            Extractor::Path { path } => {
-                let parts: Vec<&str> = req_path.split('/').filter(|s| !s.is_empty()).collect();
-                for (segment, pattern) in parts.iter().zip(path.iter()) {
-                    if let Some(var_name) =
-                        pattern.strip_prefix('{').and_then(|s| s.strip_suffix('}'))
-                    {
-                        variables.insert(var_name, segment.to_string());
-                    }
-                }
-            }
-            Extractor::Query { name, parameter } => {
-                if let Some(value) = query_fn(parameter) {
-                    variables.insert(name.as_str(), value);
-                }
-            }
-        }
-    }
-    variables
 }
 
 pub fn match_path(path: &str, path_pattern: Vec<String>) -> Option<HashMap<String, String>> {
@@ -91,10 +56,10 @@ mod tests {
     use super::*;
     use crate::config::{Binding, SARAttributes};
 
-    fn vars<'a>(entries: &[(&'a str, &str)]) -> HashMap<&'a str, String> {
+    fn vars(entries: &[(&str, &str)]) -> HashMap<String, String> {
         entries
             .iter()
-            .map(|(k, v)| (*k, v.to_string()))
+            .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect()
     }
 

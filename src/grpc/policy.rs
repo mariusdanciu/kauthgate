@@ -1,49 +1,70 @@
-use crate::config::grpc::AuthPolicy;
+use crate::config::defs::Binding;
+use crate::config::grpc::RBACMapping;
+use std::collections::HashMap;
 
-pub(crate) fn check_policy(
-    policy: &AuthPolicy,
+pub(crate) fn check_mapping(
+    policy: &RBACMapping,
     service: &str,
-    action: &str,
-    has_header: impl Fn(&str) -> bool,
-) -> bool {
-    if policy.conditions.service != service {
-        return false;
-    }
+    grpc_method: &str,
+    get_header: impl Fn(&str) -> Option<String>,
+) -> Option<HashMap<String, String>> {
+    let mut variables = HashMap::new();
 
-    if !policy
-        .conditions
-        .allowed_actions
-        .contains(&action.to_string())
-    {
-        return false;
-    };
-
-    for header in &policy.conditions.required_headers {
-        if !has_header(&header) {
-            return false;
+    if let Some(svc) = &policy.conditions.service {
+        if svc != service {
+            return None;
         }
     }
 
-    true
+    if let Some(methods) = &policy.conditions.grpc_methods {
+        if !methods.contains(&grpc_method.to_string()) {
+            return None;
+        }
+    }
+
+    if let Some(headers) = &policy.conditions.headers {
+    for header in headers {
+        let value = get_header(header.name.as_str());
+
+        if let Some(value) = value {
+            match &header.value {
+                Binding::Variable(var) => {
+                    variables.insert(var.to_string(), value);
+                }
+                Binding::Literal(literal) => {
+                    if value != *literal {
+                        return None;
+                    }
+                }
+            }
+        } else {
+            return None;
+        }
+    }
+    }
+    variables.insert("service".into(), service.to_string());
+    variables.insert("grpc_method".into(), grpc_method.to_string());
+    Some(variables)
 }
 
 #[cfg(test)]
 pub mod tests {
     // -- match_policy tests --
     use super::*;
-    use crate::config::grpc::Conditions;
-    use crate::config::SARAttributes;
+    use crate::config::defs::Entity;
     use crate::config::Binding;
+    use crate::config::SARAttributes;
+    use crate::config::grpc::Conditions;
 
-    fn policy(service: &str, actions: &[&str], required_headers: &[&str]) -> AuthPolicy {
-        AuthPolicy {
+    fn policy(service: &str, actions: &[&str], headers: Vec<Entity>) -> RBACMapping {
+        RBACMapping {
             name: "test-policy".into(),
             conditions: Conditions {
-                service: service.into(),
-                allowed_actions: actions.iter().map(|s| s.to_string()).collect(),
-                required_headers: required_headers.iter().map(|s| s.to_string()).collect(),
+                service: Some(service.into()),
+                grpc_methods: Some(actions.iter().map(|s| s.to_string()).collect()),
+                headers: if headers.is_empty() { None } else { Some(headers) },
             },
-            resource_attributes: SARAttributes {
+            sar_resource_attributes: SARAttributes {
                 namespace: Binding::Variable("tenant".into()),
                 api_group: Binding::Literal("example.io".into()),
                 resource: Binding::Literal("widgets".into()),
@@ -52,42 +73,101 @@ pub mod tests {
         }
     }
 
+    fn var_header(name: &str, var: &str) -> Entity {
+        Entity { name: name.into(), value: Binding::Variable(var.into()) }
+    }
+
+    fn literal_header(name: &str, literal: &str) -> Entity {
+        Entity { name: name.into(), value: Binding::Literal(literal.into()) }
+    }
+
+    fn no_header(_: &str) -> Option<String> { None }
+
     #[test]
     fn match_policy_matches_service_and_action() {
-        let p = policy("my.Service", &["GetItem", "ListItems"], &[]);
-        assert!(check_policy(&p, "my.Service", "GetItem", |_| true));
-        assert!(check_policy(&p, "my.Service", "ListItems", |_| true));
+        let p = policy("my.Service", &["GetItem", "ListItems"], vec![]);
+        assert!(check_mapping(&p, "my.Service", "GetItem", no_header).is_some());
+        assert!(check_mapping(&p, "my.Service", "ListItems", no_header).is_some());
     }
 
     #[test]
     fn match_policy_rejects_wrong_service() {
-        let p = policy("my.Service", &["GetItem"], &[]);
-        assert!(!check_policy(&p, "other.Service", "GetItem", |_| true));
+        let p = policy("my.Service", &["GetItem"], vec![]);
+        assert!(check_mapping(&p, "other.Service", "GetItem", no_header).is_none());
     }
 
     #[test]
     fn match_policy_rejects_wrong_action() {
-        let p = policy("my.Service", &["GetItem"], &[]);
-        assert!(!check_policy(&p, "my.Service", "DeleteItem", |_| true));
+        let p = policy("my.Service", &["GetItem"], vec![]);
+        assert!(check_mapping(&p, "my.Service", "DeleteItem", no_header).is_none());
     }
 
     #[test]
     fn match_policy_requires_all_headers() {
-        let p = policy("my.Service", &["GetItem"], &["x-tenant-id", "x-request-id"]);
-        let has = |h: &str| h == "x-tenant-id" || h == "x-request-id";
-        assert!(check_policy(&p, "my.Service", "GetItem", has));
+        let p = policy("my.Service", &["GetItem"], vec![
+            var_header("x-tenant-id", "tenant"),
+            var_header("x-request-id", "req_id"),
+        ]);
+        let get = |h: &str| match h {
+            "x-tenant-id" => Some("t1".into()),
+            "x-request-id" => Some("r1".into()),
+            _ => None,
+        };
+        let result = check_mapping(&p, "my.Service", "GetItem", get);
+        assert!(result.is_some());
+        let vars = result.unwrap();
+        assert_eq!(vars.get("tenant").unwrap(), "t1");
+        assert_eq!(vars.get("req_id").unwrap(), "r1");
     }
 
     #[test]
     fn match_policy_rejects_missing_header() {
-        let p = policy("my.Service", &["GetItem"], &["x-tenant-id", "x-request-id"]);
-        let has = |h: &str| h == "x-tenant-id";
-        assert!(!check_policy(&p, "my.Service", "GetItem", has));
+        let p = policy("my.Service", &["GetItem"], vec![
+            var_header("x-tenant-id", "tenant"),
+            var_header("x-request-id", "req_id"),
+        ]);
+        let get = |h: &str| match h {
+            "x-tenant-id" => Some("t1".into()),
+            _ => None,
+        };
+        assert!(check_mapping(&p, "my.Service", "GetItem", get).is_none());
     }
 
     #[test]
-    fn match_policy_no_required_headers_always_passes() {
-        let p = policy("my.Service", &["GetItem"], &[]);
-        assert!(check_policy(&p, "my.Service", "GetItem", |_| false));
+    fn match_policy_no_headers_always_passes() {
+        let p = policy("my.Service", &["GetItem"], vec![]);
+        assert!(check_mapping(&p, "my.Service", "GetItem", no_header).is_some());
+    }
+
+    #[test]
+    fn match_policy_literal_header_rejects_wrong_value() {
+        let p = policy("my.Service", &["GetItem"], vec![
+            literal_header("x-version", "v2"),
+        ]);
+        let get = |h: &str| match h {
+            "x-version" => Some("v1".into()),
+            _ => None,
+        };
+        assert!(check_mapping(&p, "my.Service", "GetItem", get).is_none());
+    }
+
+    #[test]
+    fn match_policy_literal_header_accepts_matching_value() {
+        let p = policy("my.Service", &["GetItem"], vec![
+            literal_header("x-version", "v2"),
+        ]);
+        let get = |h: &str| match h {
+            "x-version" => Some("v2".into()),
+            _ => None,
+        };
+        assert!(check_mapping(&p, "my.Service", "GetItem", get).is_some());
+    }
+
+    #[test]
+    fn match_policy_injects_service_and_method() {
+        let p = policy("my.Service", &["GetItem"], vec![]);
+        let vars = check_mapping(&p, "my.Service", "GetItem", no_header).unwrap();
+        assert_eq!(vars.get("service").unwrap(), "my.Service");
+        assert_eq!(vars.get("grpc_method").unwrap(), "GetItem");
     }
 }

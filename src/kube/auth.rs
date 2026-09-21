@@ -33,31 +33,38 @@ pub struct AuthInfo {
     pub groups: Vec<String>,
 }
 
-pub struct KubeAuthClient {
+struct Inner {
     client: tokio::sync::OnceCell<Client>,
     token_review_audiences: Vec<String>,
     token_cache: Cache<String, Result<AuthInfo, AuthError>>,
     sar_cache: Cache<String, bool>,
 }
 
+#[derive(Clone)]
+pub struct KubeAuthClient {
+    inner: Arc<Inner>,
+}
+
 impl KubeAuthClient {
     pub fn new(cache_ttl: Duration, token_review_audiences: Vec<String>) -> Self {
         Self {
-            client: tokio::sync::OnceCell::new(),
-            token_review_audiences,
-            token_cache: Cache::builder()
-                .time_to_live(cache_ttl)
-                .max_capacity(10_000)
-                .build(),
-            sar_cache: Cache::builder()
-                .time_to_live(cache_ttl)
-                .max_capacity(10_000)
-                .build(),
+            inner: Arc::new(Inner {
+                client: tokio::sync::OnceCell::new(),
+                token_review_audiences,
+                token_cache: Cache::builder()
+                    .time_to_live(cache_ttl)
+                    .max_capacity(10_000)
+                    .build(),
+                sar_cache: Cache::builder()
+                    .time_to_live(cache_ttl)
+                    .max_capacity(10_000)
+                    .build(),
+            }),
         }
     }
 
     async fn client(&self) -> Result<&Client, AuthError> {
-        self.client
+        self.inner.client
             .get_or_try_init(|| async {
                 Client::try_default()
                     .await
@@ -69,10 +76,10 @@ impl KubeAuthClient {
     pub async fn authenticate(&self, token: &str) -> Result<AuthInfo, AuthError> {
         let client = self.client().await?.clone();
         let token_owned = token.to_string();
-        let audiences = self.token_review_audiences.clone();
+        let audiences = self.inner.token_review_audiences.clone();
         let cache_key = hash_token(token);
 
-        self.token_cache
+        self.inner.token_cache
             .try_get_with(cache_key, async move {
                 debug!("Performing TokenReview");
                 let review = TokenReview {
@@ -144,6 +151,7 @@ impl KubeAuthClient {
         let groups = auth_info.groups.clone();
 
         let allowed = self
+            .inner
             .sar_cache
             .try_get_with(key, async move {
                 let sar = SubjectAccessReview {
