@@ -124,10 +124,42 @@ The gRPC proxy listens on port 6188 (h2c) and the HTTP proxy on port 8080.
 | `--secret-config` | `/secrets/secret-config.yaml` | Optional secret config overlay (merged on top) |
 | `-j, --json-logs` | `false` | Enable JSON-formatted log output |
 
-## Building
+## Building & Development
+
+All build, test, and quality tasks are driven through `make`. Run `make help` to see every target.
+
+### Quick reference
 
 ```bash
-cargo build --release
+make build          # debug build
+make release        # optimised release build
+make test           # run all tests (add V=1 for verbose output)
+make fmt            # format code
+make lint           # clippy + rustfmt check
+make doc            # generate rustdoc (warnings are errors)
+make audit          # cargo audit
+make all            # build + fmt + lint + test + audit
+```
+
+### Container image
+
+```bash
+make container      # build image (auto-detects podman or docker)
+make container-run  # run container on host network
+```
+
+Override the container engine or image name:
+
+```bash
+make container CONTAINER_ENGINE=docker IMAGE=my-registry/rbac-gate
+```
+
+### Dev setup
+
+Install the pre-commit git hook:
+
+```bash
+make setup-hooks
 ```
 
 ## Kubernetes RBAC setup
