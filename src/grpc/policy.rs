@@ -10,19 +10,19 @@ pub(crate) fn check_mapping(
 ) -> Option<HashMap<String, String>> {
     let mut variables = HashMap::new();
 
-    if let Some(svc) = &policy.conditions.service {
+    if let Some(svc) = &policy.request.service {
         if svc != service {
             return None;
         }
     }
 
-    if let Some(methods) = &policy.conditions.grpc_methods {
+    if let Some(methods) = &policy.request.grpc_methods {
         if !methods.contains(&grpc_method.to_string()) {
             return None;
         }
     }
 
-    if let Some(headers) = &policy.conditions.headers {
+    if let Some(headers) = &policy.request.headers {
     for header in headers {
         let value = get_header(header.name.as_str());
 
@@ -54,12 +54,12 @@ pub mod tests {
     use crate::config::defs::Entity;
     use crate::config::Binding;
     use crate::config::SARAttributes;
-    use crate::config::grpc::Conditions;
+    use crate::config::grpc::RequestMatch;
 
     fn policy(service: &str, actions: &[&str], headers: Vec<Entity>) -> RBACMapping {
         RBACMapping {
             name: "test-policy".into(),
-            conditions: Conditions {
+            request: RequestMatch {
                 service: Some(service.into()),
                 grpc_methods: Some(actions.iter().map(|s| s.to_string()).collect()),
                 headers: if headers.is_empty() { None } else { Some(headers) },

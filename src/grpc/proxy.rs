@@ -1,7 +1,7 @@
 use crate::config::ProxyConfig;
 use crate::grpc::policy::check_mapping;
 use crate::kube::auth::KubeAuthClient;
-use crate::utils::policy::compile_resource_attributes;
+use crate::utils::proxy::compile_resource_attributes;
 use crate::utils::proxy::get_header;
 use async_trait::async_trait;
 use pingora::http::ResponseHeader;

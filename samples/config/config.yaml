@@ -16,7 +16,7 @@ grpc:
     port: 50051
   mappings:
     - name: flight
-      conditions:
+      request:
         service: arrow.flight.protocol.FlightService
         grpc-methods:
           - DoAction
@@ -38,7 +38,7 @@ http:
     port: 8081
   mappings:
     - name: rest
-      conditions:
+      request:
         path: /api/v1alpha1/data/connections
         headers:
           - name: "x-tenant-id"

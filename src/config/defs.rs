@@ -116,7 +116,7 @@ grpc:
     port: 50051
   mappings:
     - name: flight
-      conditions:
+      request:
         service: arrow.flight.protocol.FlightService
         grpc-methods:
           - DoAction
@@ -152,14 +152,14 @@ http:
         let policy = &cfg.grpc.mappings[0];
         assert_eq!(policy.name, "flight");
         assert_eq!(
-            policy.conditions.service.as_deref(),
+            policy.request.service.as_deref(),
             Some("arrow.flight.protocol.FlightService")
         );
         assert_eq!(
-            policy.conditions.grpc_methods,
+            policy.request.grpc_methods,
             Some(vec!["DoAction".into(), "DoGet".into()])
         );
-        let headers = policy.conditions.headers.as_ref().unwrap();
+        let headers = policy.request.headers.as_ref().unwrap();
         assert_eq!(headers.len(), 1);
         assert_eq!(headers[0].name, "x-tenant-id");
         assert_eq!(headers[0].value, Binding::Variable("tenant-id".into()));
@@ -215,7 +215,7 @@ grpc:
     port: 8080
   mappings:
     - name: test
-      conditions:
+      request:
         service: svc
         grpc-methods: []
         headers: []

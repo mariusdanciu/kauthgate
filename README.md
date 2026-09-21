@@ -26,7 +26,7 @@ grpc:
     port: 50051
   mappings:
     - name: flight
-      conditions:
+      request:
         service: arrow.flight.protocol.FlightService
         grpc-methods:
           - DoAction
@@ -47,7 +47,7 @@ http:
     port: 8081
   mappings:
     - name: rest
-      conditions:
+      request:
         path: /api/v1alpha1/data/connections
         methods:
           - post
@@ -75,11 +75,11 @@ Variables are extracted from request data and can be interpolated into SAR resou
 - **Query parameters** — `name` specifies the parameter, `value: "{var}"` captures its value
 - **Path / method** — the full request path and HTTP method are automatically injected as `path` and `method`
 
-### Mapping conditions
+### Request matching
 
-All condition fields are optional. When omitted, the condition is not checked (any value matches).
+All request match fields are optional. When omitted, the field is not checked (any value matches).
 
-**gRPC conditions:**
+**gRPC request fields:**
 
 | Field | Description |
 |-------|-------------|
@@ -87,7 +87,7 @@ All condition fields are optional. When omitted, the condition is not checked (a
 | `grpc-methods` | List of allowed gRPC methods (e.g. `DoGet`, `DoAction`) |
 | `headers` | Required headers with variable or literal values |
 
-**HTTP conditions:**
+**HTTP request fields:**
 
 | Field | Description |
 |-------|-------------|

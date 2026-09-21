@@ -5,7 +5,7 @@ use crate::config::defs::SARAttributes;
 use crate::config::defs::Upstream;
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct Conditions {
+pub struct RequestMatch {
     #[serde(default)]
     pub service: Option<String>,
     #[serde(rename = "grpc-methods", default)]
@@ -17,7 +17,7 @@ pub struct Conditions {
 #[derive(Debug, Clone, Deserialize)]
 pub struct RBACMapping {
     pub name: String,
-    pub conditions: Conditions,
+    pub request: RequestMatch,
     #[serde(rename = "sar-resource-attributes")]
     pub sar_resource_attributes: SARAttributes,
 }

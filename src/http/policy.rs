@@ -56,7 +56,7 @@ pub(crate) fn check_mapping(
         .map(|s| s.to_string())
         .collect();
 
-    if let Some(mapping_path) = &policy.conditions.path {
+    if let Some(mapping_path) = &policy.request.path {
         if let Some(p_vars) = check_path(mapping_path, &parts) {
             variables.extend(p_vars);
         } else {
@@ -65,13 +65,13 @@ pub(crate) fn check_mapping(
         }
     }
 
-    if let Some(methods) = &policy.conditions.methods {
+    if let Some(methods) = &policy.request.methods {
         if !methods.contains(method) {
             return None;
         }
     }
 
-    if let Some(headers) = &policy.conditions.headers {
+    if let Some(headers) = &policy.request.headers {
         for header in headers {
             let value = get_header(header.name.as_str());
 
@@ -92,7 +92,7 @@ pub(crate) fn check_mapping(
         }
     }
 
-    if let Some(query_params) = &policy.conditions.query_params {
+    if let Some(query_params) = &policy.request.query_params {
         for query in query_params {
             let value = get_query(query.name.as_str());
 
@@ -123,7 +123,7 @@ pub(crate) fn check_mapping(
 mod tests {
     use super::*;
     use crate::config::defs::{Binding, Entity, SARAttributes};
-    use crate::config::http::{Conditions, RBACMapping};
+    use crate::config::http::{RequestMatch, RBACMapping};
 
     fn segments(path: &str) -> Vec<String> {
         path.split('/').filter(|s| !s.is_empty()).map(|s| s.to_string()).collect()
@@ -144,7 +144,7 @@ mod tests {
     ) -> RBACMapping {
         RBACMapping {
             name: "test".into(),
-            conditions: Conditions {
+            request: RequestMatch {
                 path: path.map(|p| path_bindings(&segments(p).iter().map(|s| s.as_str()).collect::<Vec<_>>())),
                 methods: methods.map(|m| m.iter().map(|s| s.to_string()).collect()),
                 headers,
@@ -264,7 +264,7 @@ mod tests {
     fn mapping_extracts_path_variables() {
         let m = RBACMapping {
             name: "test".into(),
-            conditions: Conditions {
+            request: RequestMatch {
                 path: Some(path_bindings(&["tenants", "{tid}", "resources"])),
                 methods: None,
                 headers: None,
@@ -349,7 +349,7 @@ mod tests {
     fn mapping_combines_path_and_header_variables() {
         let m = RBACMapping {
             name: "test".into(),
-            conditions: Conditions {
+            request: RequestMatch {
                 path: Some(path_bindings(&["tenants", "{tid}", "data"])),
                 methods: Some(vec!["POST".into()]),
                 headers: Some(vec![var_entity("x-request-id", "rid")]),

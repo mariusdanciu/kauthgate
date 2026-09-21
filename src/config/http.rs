@@ -24,11 +24,13 @@ where
     D: Deserializer<'de>,
 {
     let methods: Vec<String> = Vec::deserialize(deserializer)?;
-    Ok(Some(methods.into_iter().map(|m| m.to_lowercase()).collect()))
+    Ok(Some(
+        methods.into_iter().map(|m| m.to_lowercase()).collect(),
+    ))
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct Conditions {
+pub struct RequestMatch {
     #[serde(default, deserialize_with = "deserialize_path_segments")]
     pub path: Option<Vec<Binding>>,
     #[serde(default, deserialize_with = "deserialize_methods")]
@@ -42,7 +44,7 @@ pub struct Conditions {
 #[derive(Debug, Clone, Deserialize)]
 pub struct RBACMapping {
     pub name: String,
-    pub conditions: Conditions,
+    pub request: RequestMatch,
     #[serde(rename = "sar-resource-attributes")]
     pub sar_resource_attributes: SARAttributes,
 }
