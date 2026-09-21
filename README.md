@@ -73,6 +73,7 @@ Variables are extracted from request data and can be interpolated into SAR resou
 - **Path segments** — use `{variable}` in the path pattern (e.g. `/api/{version}/tenants/{tenant-id}`)
 - **Headers** — same as gRPC: `name` specifies the header, `value: "{var}"` captures its value
 - **Query parameters** — `name` specifies the parameter, `value: "{var}"` captures its value
+- **Path / method** — the full request path and HTTP method are automatically injected as `path` and `method`
 
 ### Mapping conditions
 
