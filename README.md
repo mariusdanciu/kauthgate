@@ -1,4 +1,4 @@
-# kauthgate
+# RBAC-Gate
 
 An authentication and authorization gateway built on [Pingora](https://github.com/cloudflare/pingora). It sits in front of gRPC and HTTP backends and enforces Kubernetes-native auth (TokenReview + SubjectAccessReview) on every request.
 
@@ -111,7 +111,7 @@ sar-resource-attributes:
 ## Usage
 
 ```bash
-kauthgate --config config/config.yaml
+rbac-gate --config config/config.yaml
 ```
 
 The gRPC proxy listens on port 6188 (h2c) and the HTTP proxy on port 8080.
@@ -138,7 +138,7 @@ The gateway's ServiceAccount needs permissions to create TokenReview and Subject
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: kauthgate
+  name: rbac-gate
 rules:
   - apiGroups: ["authentication.k8s.io"]
     resources: ["tokenreviews"]
