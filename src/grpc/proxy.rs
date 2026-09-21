@@ -25,11 +25,7 @@ impl GrpcProxy {
         );
         peer.options.set_http_version(2, 2);
 
-        Self {
-            config,
-            client,
-            peer,
-        }
+        Self { config, client, peer }
     }
 
     async fn error_response(&self, status_code: u8, message: &str, session: &mut Session) -> Result<bool> {
