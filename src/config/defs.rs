@@ -77,19 +77,11 @@ where
     let s = String::deserialize(deserializer)?;
     if s.starts_with('{') && s.ends_with('}') {
         return Ok(Binding::Variable(
-            s.strip_prefix('{')
-                .unwrap()
-                .strip_suffix('}')
-                .unwrap()
-                .to_string(),
+            s.strip_prefix('{').unwrap().strip_suffix('}').unwrap().to_string(),
         ));
     }
     Ok(Binding::Literal(s))
 }
-
-///----------------------------------------
-/// Tests
-///----------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -175,10 +167,7 @@ http:
             policy.sar_resource_attributes.resource,
             Binding::Literal("widgets".into())
         );
-        assert_eq!(
-            policy.sar_resource_attributes.verb,
-            Binding::Literal("get".into())
-        );
+        assert_eq!(policy.sar_resource_attributes.verb, Binding::Literal("get".into()));
     }
 
     #[test]
@@ -233,26 +222,17 @@ http:
             value = value
         );
         let cfg = parse_yaml(&yaml);
-        cfg.grpc.mappings[0]
-            .sar_resource_attributes
-            .namespace
-            .clone()
+        cfg.grpc.mappings[0].sar_resource_attributes.namespace.clone()
     }
 
     #[test]
     fn binding_variable_from_braces() {
-        assert_eq!(
-            parse_binding("{tenant}"),
-            Binding::Variable("tenant".into())
-        );
+        assert_eq!(parse_binding("{tenant}"), Binding::Variable("tenant".into()));
     }
 
     #[test]
     fn binding_literal_from_plain_string() {
-        assert_eq!(
-            parse_binding("my-namespace"),
-            Binding::Literal("my-namespace".into())
-        );
+        assert_eq!(parse_binding("my-namespace"), Binding::Literal("my-namespace".into()));
     }
 
     #[test]
@@ -277,9 +257,6 @@ http:
 
     #[test]
     fn binding_nested_braces() {
-        assert_eq!(
-            parse_binding("{{inner}}"),
-            Binding::Variable("{inner}".into())
-        );
+        assert_eq!(parse_binding("{{inner}}"), Binding::Variable("{inner}".into()));
     }
 }

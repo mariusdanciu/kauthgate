@@ -3,10 +3,7 @@ use crate::config::http::RBACMapping;
 use std::collections::HashMap;
 use tracing::info;
 
-fn check_path(
-    mapping_path: &Vec<Binding>,
-    request_path: &Vec<String>,
-) -> Option<HashMap<String, String>> {
+fn check_path(mapping_path: &[Binding], request_path: &[String]) -> Option<HashMap<String, String>> {
     let mut variables = HashMap::new();
     let m_len = mapping_path.len();
     let r_len = request_path.len();
@@ -25,7 +22,7 @@ fn check_path(
         match segment {
             Binding::Variable(var) => {
                 variables.insert(var.to_string(), request_path[i].to_string());
-            }
+            },
             Binding::Literal(literal) => {
                 if literal == "*" {
                     continue;
@@ -35,7 +32,7 @@ fn check_path(
                 if request_path[i] != *literal {
                     return None;
                 }
-            }
+            },
         }
     }
     Some(variables)
@@ -65,10 +62,10 @@ pub(crate) fn check_mapping(
         }
     }
 
-    if let Some(methods) = &policy.request.methods {
-        if !methods.contains(method) {
-            return None;
-        }
+    if let Some(methods) = &policy.request.methods
+        && !methods.contains(method)
+    {
+        return None;
     }
 
     if let Some(headers) = &policy.request.headers {
@@ -79,12 +76,12 @@ pub(crate) fn check_mapping(
                 match &header.value {
                     Binding::Variable(var) => {
                         variables.insert(var.to_string(), value);
-                    }
+                    },
                     Binding::Literal(literal) => {
                         if value != *literal {
                             return None;
                         }
-                    }
+                    },
                 }
             } else {
                 return None;
@@ -100,19 +97,18 @@ pub(crate) fn check_mapping(
                 match &query.value {
                     Binding::Variable(var) => {
                         variables.insert(var.to_string(), value);
-                    }
+                    },
                     Binding::Literal(literal) => {
                         if value != *literal {
                             return None;
                         }
-                    }
+                    },
                 }
             } else {
                 return None;
             }
         }
     }
-
 
     variables.insert("path".into(), path.to_string());
     variables.insert("method".into(), method.to_string());
@@ -123,18 +119,25 @@ pub(crate) fn check_mapping(
 mod tests {
     use super::*;
     use crate::config::defs::{Binding, Entity, SARAttributes};
-    use crate::config::http::{RequestMatch, RBACMapping};
+    use crate::config::http::{RBACMapping, RequestMatch};
 
     fn segments(path: &str) -> Vec<String> {
-        path.split('/').filter(|s| !s.is_empty()).map(|s| s.to_string()).collect()
+        path.split('/')
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .collect()
     }
 
     fn path_bindings(parts: &[&str]) -> Vec<Binding> {
         parts.iter().map(|s| Binding::from_str(s)).collect()
     }
 
-    fn no_header(_: &str) -> Option<String> { None }
-    fn no_query(_: &str) -> Option<String> { None }
+    fn no_header(_: &str) -> Option<String> {
+        None
+    }
+    fn no_query(_: &str) -> Option<String> {
+        None
+    }
 
     fn mapping(
         path: Option<&str>,
@@ -160,11 +163,17 @@ mod tests {
     }
 
     fn var_entity(name: &str, var: &str) -> Entity {
-        Entity { name: name.into(), value: Binding::Variable(var.into()) }
+        Entity {
+            name: name.into(),
+            value: Binding::Variable(var.into()),
+        }
     }
 
     fn literal_entity(name: &str, literal: &str) -> Entity {
-        Entity { name: name.into(), value: Binding::Literal(literal.into()) }
+        Entity {
+            name: name.into(),
+            value: Binding::Literal(literal.into()),
+        }
     }
 
     // -- check_path tests --
@@ -277,42 +286,87 @@ mod tests {
                 verb: Binding::Literal("v".into()),
             },
         };
-        let vars = check_mapping(&m, &"/tenants/acme/resources".into(), &"GET".into(), no_header, no_query).unwrap();
+        let vars = check_mapping(
+            &m,
+            &"/tenants/acme/resources".into(),
+            &"GET".into(),
+            no_header,
+            no_query,
+        )
+        .unwrap();
         assert_eq!(vars.get("tid").unwrap(), "acme");
     }
 
     #[test]
     fn mapping_requires_header_present() {
-        let m = mapping(Some("/api"), Some(&["GET"]), Some(vec![var_entity("x-token", "tok")]), None);
+        let m = mapping(
+            Some("/api"),
+            Some(&["GET"]),
+            Some(vec![var_entity("x-token", "tok")]),
+            None,
+        );
         assert!(check_mapping(&m, &"/api".into(), &"GET".into(), no_header, no_query).is_none());
-        let result = check_mapping(&m, &"/api".into(), &"GET".into(), |h| {
-            if h == "x-token" { Some("abc".into()) } else { None }
-        }, no_query);
+        let result = check_mapping(
+            &m,
+            &"/api".into(),
+            &"GET".into(),
+            |h| {
+                if h == "x-token" { Some("abc".into()) } else { None }
+            },
+            no_query,
+        );
         assert!(result.is_some());
         assert_eq!(result.unwrap().get("tok").unwrap(), "abc");
     }
 
     #[test]
     fn mapping_literal_header_rejects_wrong_value() {
-        let m = mapping(Some("/api"), Some(&["GET"]), Some(vec![literal_entity("x-version", "v2")]), None);
-        let result = check_mapping(&m, &"/api".into(), &"GET".into(), |h| {
-            if h == "x-version" { Some("v1".into()) } else { None }
-        }, no_query);
+        let m = mapping(
+            Some("/api"),
+            Some(&["GET"]),
+            Some(vec![literal_entity("x-version", "v2")]),
+            None,
+        );
+        let result = check_mapping(
+            &m,
+            &"/api".into(),
+            &"GET".into(),
+            |h| {
+                if h == "x-version" { Some("v1".into()) } else { None }
+            },
+            no_query,
+        );
         assert!(result.is_none());
     }
 
     #[test]
     fn mapping_literal_header_accepts_matching_value() {
-        let m = mapping(Some("/api"), Some(&["GET"]), Some(vec![literal_entity("x-version", "v2")]), None);
-        let result = check_mapping(&m, &"/api".into(), &"GET".into(), |h| {
-            if h == "x-version" { Some("v2".into()) } else { None }
-        }, no_query);
+        let m = mapping(
+            Some("/api"),
+            Some(&["GET"]),
+            Some(vec![literal_entity("x-version", "v2")]),
+            None,
+        );
+        let result = check_mapping(
+            &m,
+            &"/api".into(),
+            &"GET".into(),
+            |h| {
+                if h == "x-version" { Some("v2".into()) } else { None }
+            },
+            no_query,
+        );
         assert!(result.is_some());
     }
 
     #[test]
     fn mapping_requires_query_param() {
-        let m = mapping(Some("/search"), Some(&["GET"]), None, Some(vec![var_entity("q", "query")]));
+        let m = mapping(
+            Some("/search"),
+            Some(&["GET"]),
+            None,
+            Some(vec![var_entity("q", "query")]),
+        );
         assert!(check_mapping(&m, &"/search".into(), &"GET".into(), no_header, no_query).is_none());
         let result = check_mapping(&m, &"/search".into(), &"GET".into(), no_header, |q| {
             if q == "q" { Some("rust".into()) } else { None }
@@ -323,7 +377,12 @@ mod tests {
 
     #[test]
     fn mapping_literal_query_rejects_wrong_value() {
-        let m = mapping(Some("/api"), Some(&["GET"]), None, Some(vec![literal_entity("format", "json")]));
+        let m = mapping(
+            Some("/api"),
+            Some(&["GET"]),
+            None,
+            Some(vec![literal_entity("format", "json")]),
+        );
         let result = check_mapping(&m, &"/api".into(), &"GET".into(), no_header, |q| {
             if q == "format" { Some("xml".into()) } else { None }
         });
@@ -366,9 +425,16 @@ mod tests {
             &m,
             &"/tenants/acme/data".into(),
             &"POST".into(),
-            |h| if h == "x-request-id" { Some("req-123".into()) } else { None },
+            |h| {
+                if h == "x-request-id" {
+                    Some("req-123".into())
+                } else {
+                    None
+                }
+            },
             no_query,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(vars.get("tid").unwrap(), "acme");
         assert_eq!(vars.get("rid").unwrap(), "req-123");
     }

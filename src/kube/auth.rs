@@ -1,7 +1,5 @@
 use k8s_openapi::api::authentication::v1::{TokenReview, TokenReviewSpec};
-use k8s_openapi::api::authorization::v1::{
-    ResourceAttributes, SubjectAccessReview, SubjectAccessReviewSpec,
-};
+use k8s_openapi::api::authorization::v1::{ResourceAttributes, SubjectAccessReview, SubjectAccessReviewSpec};
 use kube::api::PostParams;
 use kube::{Api, Client};
 use moka::future::Cache;
@@ -51,20 +49,15 @@ impl KubeAuthClient {
             inner: Arc::new(Inner {
                 client: tokio::sync::OnceCell::new(),
                 token_review_audiences,
-                token_cache: Cache::builder()
-                    .time_to_live(cache_ttl)
-                    .max_capacity(10_000)
-                    .build(),
-                sar_cache: Cache::builder()
-                    .time_to_live(cache_ttl)
-                    .max_capacity(10_000)
-                    .build(),
+                token_cache: Cache::builder().time_to_live(cache_ttl).max_capacity(10_000).build(),
+                sar_cache: Cache::builder().time_to_live(cache_ttl).max_capacity(10_000).build(),
             }),
         }
     }
 
     async fn client(&self) -> Result<&Client, AuthError> {
-        self.inner.client
+        self.inner
+            .client
             .get_or_try_init(|| async {
                 Client::try_default()
                     .await
@@ -180,11 +173,7 @@ impl KubeAuthClient {
             .await
             .map_err(|e: Arc<AuthError>| e.as_ref().clone())?;
 
-        if allowed {
-            Ok(())
-        } else {
-            Err(AuthError::Unauthorized)
-        }
+        if allowed { Ok(()) } else { Err(AuthError::Unauthorized) }
     }
 }
 
@@ -215,10 +204,7 @@ mod tests {
         let requested = vec!["https://kubernetes.default.svc".to_string()];
         let returned = vec!["https://other-audience".to_string()];
 
-        assert!(!has_compatible_audience(
-            &requested,
-            Some(returned.as_slice())
-        ));
+        assert!(!has_compatible_audience(&requested, Some(returned.as_slice())));
     }
 
     #[test]
@@ -229,9 +215,6 @@ mod tests {
             "https://kubernetes.default.svc".to_string(),
         ];
 
-        assert!(has_compatible_audience(
-            &requested,
-            Some(returned.as_slice())
-        ));
+        assert!(has_compatible_audience(&requested, Some(returned.as_slice())));
     }
 }

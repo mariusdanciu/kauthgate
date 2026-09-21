@@ -1,9 +1,8 @@
-use pingora::proxy::Session;
 use crate::config::Binding;
 use crate::config::SARAttributes;
 use k8s_openapi::api::authorization::v1::ResourceAttributes;
+use pingora::proxy::Session;
 use std::collections::HashMap;
-
 
 pub(crate) fn get_header(session: &Session, header: &str) -> Option<String> {
     session
@@ -31,10 +30,10 @@ pub(crate) fn compile_resource_attributes(
     let verb = resolve(&resource_attributes.verb, variables);
 
     ResourceAttributes {
-        namespace: namespace,
-        group: group,
-        resource: resource,
-        verb: verb,
+        namespace,
+        group,
+        resource,
+        verb,
         ..Default::default()
     }
 }

@@ -10,37 +10,37 @@ pub(crate) fn check_mapping(
 ) -> Option<HashMap<String, String>> {
     let mut variables = HashMap::new();
 
-    if let Some(svc) = &policy.request.service {
-        if svc != service {
-            return None;
-        }
+    if let Some(svc) = &policy.request.service
+        && svc != service
+    {
+        return None;
     }
 
-    if let Some(methods) = &policy.request.grpc_methods {
-        if !methods.contains(&grpc_method.to_string()) {
-            return None;
-        }
+    if let Some(methods) = &policy.request.grpc_methods
+        && !methods.contains(&grpc_method.to_string())
+    {
+        return None;
     }
 
     if let Some(headers) = &policy.request.headers {
-    for header in headers {
-        let value = get_header(header.name.as_str());
+        for header in headers {
+            let value = get_header(header.name.as_str());
 
-        if let Some(value) = value {
-            match &header.value {
-                Binding::Variable(var) => {
-                    variables.insert(var.to_string(), value);
+            if let Some(value) = value {
+                match &header.value {
+                    Binding::Variable(var) => {
+                        variables.insert(var.to_string(), value);
+                    },
+                    Binding::Literal(literal) => {
+                        if value != *literal {
+                            return None;
+                        }
+                    },
                 }
-                Binding::Literal(literal) => {
-                    if value != *literal {
-                        return None;
-                    }
-                }
+            } else {
+                return None;
             }
-        } else {
-            return None;
         }
-    }
     }
     variables.insert("service".into(), service.to_string());
     variables.insert("grpc_method".into(), grpc_method.to_string());
@@ -51,9 +51,9 @@ pub(crate) fn check_mapping(
 pub mod tests {
     // -- match_policy tests --
     use super::*;
-    use crate::config::defs::Entity;
     use crate::config::Binding;
     use crate::config::SARAttributes;
+    use crate::config::defs::Entity;
     use crate::config::grpc::RequestMatch;
 
     fn policy(service: &str, actions: &[&str], headers: Vec<Entity>) -> RBACMapping {
@@ -74,14 +74,22 @@ pub mod tests {
     }
 
     fn var_header(name: &str, var: &str) -> Entity {
-        Entity { name: name.into(), value: Binding::Variable(var.into()) }
+        Entity {
+            name: name.into(),
+            value: Binding::Variable(var.into()),
+        }
     }
 
     fn literal_header(name: &str, literal: &str) -> Entity {
-        Entity { name: name.into(), value: Binding::Literal(literal.into()) }
+        Entity {
+            name: name.into(),
+            value: Binding::Literal(literal.into()),
+        }
     }
 
-    fn no_header(_: &str) -> Option<String> { None }
+    fn no_header(_: &str) -> Option<String> {
+        None
+    }
 
     #[test]
     fn match_policy_matches_service_and_action() {
@@ -104,10 +112,14 @@ pub mod tests {
 
     #[test]
     fn match_policy_requires_all_headers() {
-        let p = policy("my.Service", &["GetItem"], vec![
-            var_header("x-tenant-id", "tenant"),
-            var_header("x-request-id", "req_id"),
-        ]);
+        let p = policy(
+            "my.Service",
+            &["GetItem"],
+            vec![
+                var_header("x-tenant-id", "tenant"),
+                var_header("x-request-id", "req_id"),
+            ],
+        );
         let get = |h: &str| match h {
             "x-tenant-id" => Some("t1".into()),
             "x-request-id" => Some("r1".into()),
@@ -122,10 +134,14 @@ pub mod tests {
 
     #[test]
     fn match_policy_rejects_missing_header() {
-        let p = policy("my.Service", &["GetItem"], vec![
-            var_header("x-tenant-id", "tenant"),
-            var_header("x-request-id", "req_id"),
-        ]);
+        let p = policy(
+            "my.Service",
+            &["GetItem"],
+            vec![
+                var_header("x-tenant-id", "tenant"),
+                var_header("x-request-id", "req_id"),
+            ],
+        );
         let get = |h: &str| match h {
             "x-tenant-id" => Some("t1".into()),
             _ => None,
@@ -141,9 +157,7 @@ pub mod tests {
 
     #[test]
     fn match_policy_literal_header_rejects_wrong_value() {
-        let p = policy("my.Service", &["GetItem"], vec![
-            literal_header("x-version", "v2"),
-        ]);
+        let p = policy("my.Service", &["GetItem"], vec![literal_header("x-version", "v2")]);
         let get = |h: &str| match h {
             "x-version" => Some("v1".into()),
             _ => None,
@@ -153,9 +167,7 @@ pub mod tests {
 
     #[test]
     fn match_policy_literal_header_accepts_matching_value() {
-        let p = policy("my.Service", &["GetItem"], vec![
-            literal_header("x-version", "v2"),
-        ]);
+        let p = policy("my.Service", &["GetItem"], vec![literal_header("x-version", "v2")]);
         let get = |h: &str| match h {
             "x-version" => Some("v2".into()),
             _ => None,

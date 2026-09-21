@@ -20,12 +20,7 @@ impl HttpProxy {
         Self { config, client }
     }
 
-    async fn error_response(
-        &self,
-        status_code: u16,
-        message: &str,
-        session: &mut Session,
-    ) -> Result<bool> {
+    async fn error_response(&self, status_code: u16, message: &str, session: &mut Session) -> Result<bool> {
         let resp = ResponseHeader::build(status_code, Some(1))?;
         session.write_response_header(Box::new(resp), false).await?;
         let body: Vec<u8> = message.as_bytes().to_vec();
@@ -57,9 +52,7 @@ impl ProxyHttp for HttpProxy {
                         policy,
                         &path,
                         &method,
-                        |header| {
-                            get_header(session, header)
-                        },
+                        |header| get_header(session, header),
                         |param| {
                             session.req_header().uri.query().and_then(|q| {
                                 q.split('&')
@@ -69,13 +62,9 @@ impl ProxyHttp for HttpProxy {
                             })
                         },
                     ) {
-                        let resource_attributes =
-                            compile_resource_attributes(&policy.sar_resource_attributes, &vars);
+                        let resource_attributes = compile_resource_attributes(&policy.sar_resource_attributes, &vars);
 
-                        let resp = self
-                            .client
-                            .authorize(&auth_info, &resource_attributes)
-                            .await;
+                        let resp = self.client.authorize(&auth_info, &resource_attributes).await;
 
                         if let Err(e) = resp {
                             error!("authorization failed: {:?}", e);
@@ -88,24 +77,17 @@ impl ProxyHttp for HttpProxy {
                 }
 
                 return self.error_response(403, "no policy matched", session).await;
-            }
+            },
             Err(e) => {
                 error!("authentication failed: {:?}", e);
                 return self.error_response(401, &e.to_string(), session).await;
-            }
+            },
         }
     }
 
-    async fn upstream_peer(
-        &self,
-        _session: &mut Session,
-        _ctx: &mut Self::CTX,
-    ) -> Result<Box<HttpPeer>> {
+    async fn upstream_peer(&self, _session: &mut Session, _ctx: &mut Self::CTX) -> Result<Box<HttpPeer>> {
         let peer = HttpPeer::new(
-            (
-                self.config.http.upstream.host.clone(),
-                self.config.http.upstream.port,
-            ),
+            (self.config.http.upstream.host.clone(), self.config.http.upstream.port),
             false,
             String::new(),
         );

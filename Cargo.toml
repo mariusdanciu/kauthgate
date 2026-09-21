@@ -1,5 +1,5 @@
 [package]
-name = "kauthgate"
+name = "rbac-gate"
 version = "0.1.0"
 edition = "2024"
 

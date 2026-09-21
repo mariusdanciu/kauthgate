@@ -2,9 +2,7 @@ use crate::config::defs::{Binding, Entity, SARAttributes, Upstream};
 use serde::Deserialize;
 use serde::Deserializer;
 
-fn deserialize_path_segments<'de, D>(
-    deserializer: D,
-) -> std::result::Result<Option<Vec<Binding>>, D::Error>
+fn deserialize_path_segments<'de, D>(deserializer: D) -> std::result::Result<Option<Vec<Binding>>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -12,21 +10,17 @@ where
     let segments = s
         .split('/')
         .filter(|seg| !seg.is_empty())
-        .map(|seg| Binding::from_str(seg))
+        .map(Binding::from_str)
         .collect();
     Ok(Some(segments))
 }
 
-fn deserialize_methods<'de, D>(
-    deserializer: D,
-) -> std::result::Result<Option<Vec<String>>, D::Error>
+fn deserialize_methods<'de, D>(deserializer: D) -> std::result::Result<Option<Vec<String>>, D::Error>
 where
     D: Deserializer<'de>,
 {
     let methods: Vec<String> = Vec::deserialize(deserializer)?;
-    Ok(Some(
-        methods.into_iter().map(|m| m.to_lowercase()).collect(),
-    ))
+    Ok(Some(methods.into_iter().map(|m| m.to_lowercase()).collect()))
 }
 
 #[derive(Debug, Clone, Deserialize)]
