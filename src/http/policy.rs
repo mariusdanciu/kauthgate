@@ -1,5 +1,5 @@
 use crate::config::defs::Binding;
-use crate::config::http::RBACMapping;
+use crate::config::http::Rule;
 use crate::utils::proxy::path_to_vec;
 use std::collections::HashMap;
 use tracing::info;
@@ -40,7 +40,7 @@ fn check_path(mapping_path: &[Binding], request_path: &[&str]) -> Option<HashMap
 }
 
 pub(crate) fn check_mapping(
-    policy: &RBACMapping,
+    policy: &Rule,
     path: &str,
     method: &str,
     get_header: impl Fn(&str) -> Option<String>,
@@ -116,7 +116,7 @@ pub(crate) fn check_mapping(
 mod tests {
     use super::*;
     use crate::config::defs::{Binding, Entity, SARAttributes};
-    use crate::config::http::{RBACMapping, RequestMatch};
+    use crate::config::http::{Rule, RequestMatch};
 
     fn path_bindings(parts: &[&str]) -> Vec<Binding> {
         parts.iter().map(|s| Binding::from_str(s)).collect()
@@ -134,8 +134,8 @@ mod tests {
         methods: Option<&[&str]>,
         headers: Option<Vec<Entity>>,
         query_params: Option<Vec<Entity>>,
-    ) -> RBACMapping {
-        RBACMapping {
+    ) -> Rule {
+        Rule {
             name: "test".into(),
             request: RequestMatch {
                 path: path.map(|p| path_bindings(&path_to_vec(p))),
@@ -261,7 +261,7 @@ mod tests {
 
     #[test]
     fn mapping_extracts_path_variables() {
-        let m = RBACMapping {
+        let m = Rule {
             name: "test".into(),
             request: RequestMatch {
                 path: Some(path_bindings(&["tenants", "{tid}", "resources"])),
@@ -389,7 +389,7 @@ mod tests {
 
     #[test]
     fn mapping_combines_path_and_header_variables() {
-        let m = RBACMapping {
+        let m = Rule {
             name: "test".into(),
             request: RequestMatch {
                 path: Some(path_bindings(&["tenants", "{tid}", "data"])),

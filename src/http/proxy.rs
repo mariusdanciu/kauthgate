@@ -55,7 +55,7 @@ impl ProxyHttp for HttpProxy {
         match auth_info {
             Ok(auth_info) => {
                 let query_map: OnceCell<HashMap<&str, &str>> = OnceCell::new();
-                for policy in &self.config.http.mappings {
+                for policy in &self.config.http.rules {
                     if let Some(vars) = check_mapping(
                         policy,
                         path,

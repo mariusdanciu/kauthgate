@@ -1,9 +1,9 @@
 use crate::config::defs::Binding;
-use crate::config::grpc::RBACMapping;
+use crate::config::grpc::Rule;
 use std::collections::HashMap;
 
 pub(crate) fn check_mapping(
-    policy: &RBACMapping,
+    policy: &Rule,
     service: &str,
     grpc_method: &str,
     get_header: impl Fn(&str) -> Option<String>,
@@ -56,8 +56,8 @@ pub mod tests {
     use crate::config::defs::Entity;
     use crate::config::grpc::RequestMatch;
 
-    fn policy(service: &str, actions: &[&str], headers: Vec<Entity>) -> RBACMapping {
-        RBACMapping {
+    fn policy(service: &str, actions: &[&str], headers: Vec<Entity>) -> Rule {
+        Rule {
             name: "test-policy".into(),
             request: RequestMatch {
                 service: Some(service.into()),
@@ -177,7 +177,7 @@ pub mod tests {
 
     #[test]
     fn match_policy_all_conditions_none_matches_everything() {
-        let p = RBACMapping {
+        let p = Rule {
             name: "catch-all".into(),
             request: RequestMatch {
                 service: None,

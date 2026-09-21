@@ -14,7 +14,7 @@ grpc:
   upstream:
     host: 127.0.0.1
     port: 50051
-  mappings:
+  rules:
     - name: flight
       request:
         service: arrow.flight.protocol.FlightService
@@ -36,7 +36,7 @@ http:
   upstream:
     host: 127.0.0.1
     port: 8081
-  mappings:
+  rules:
     - name: rest
       request:
         path: /api/v1alpha1/data/connections

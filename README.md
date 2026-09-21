@@ -6,7 +6,7 @@ An authentication and authorization gateway built on [Pingora](https://github.co
 
 1. A client sends a request with a `Bearer` token in the `authorization` header.
 2. **Authentication** — the gateway validates the token via the Kubernetes TokenReview API.
-3. **Policy matching** — the request is matched against configured mappings based on service/method (gRPC) or path/method/headers/query-params (HTTP).
+3. **Policy matching** — the request is matched against configured rules based on service/method (gRPC) or path/method/headers/query-params (HTTP).
 4. **Variable extraction** — values from headers, path segments, and query strings are extracted into named variables using `{variable-name}` syntax.
 5. **Authorization** — a Kubernetes SubjectAccessReview is issued with the resolved resource attributes (namespace, apiGroup, resource, verb).
 6. If both checks pass, the request is proxied to the upstream backend. Otherwise, an error is returned (gRPC status 16 via trailers, or HTTP 401/403).
@@ -24,7 +24,7 @@ grpc:
   upstream:
     host: 127.0.0.1
     port: 50051
-  mappings:
+  rules:
     - name: flight
       request:
         service: arrow.flight.protocol.FlightService
@@ -45,7 +45,7 @@ http:
   upstream:
     host: 127.0.0.1
     port: 8081
-  mappings:
+  rules:
     - name: rest
       request:
         path: /api/v1alpha1/data/connections

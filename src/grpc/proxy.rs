@@ -60,7 +60,7 @@ impl ProxyHttp for GrpcProxy {
 
         match auth_info {
             Ok(auth_info) => {
-                for policy in &self.config.grpc.mappings {
+                for policy in &self.config.grpc.rules {
                     if let Some(vars) = check_mapping(policy, service, action, |header| get_header(session, header)) {
                         let resource_attributes = compile_resource_attributes(&policy.sar_resource_attributes, &vars);
 

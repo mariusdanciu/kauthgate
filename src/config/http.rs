@@ -36,7 +36,7 @@ pub struct RequestMatch {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct RBACMapping {
+pub struct Rule {
     pub name: String,
     pub request: RequestMatch,
     #[serde(rename = "sar-resource-attributes")]
@@ -46,5 +46,5 @@ pub struct RBACMapping {
 #[derive(Debug, Clone, Deserialize)]
 pub struct HttpConfig {
     pub upstream: Upstream,
-    pub mappings: Vec<RBACMapping>,
+    pub rules: Vec<Rule>,
 }

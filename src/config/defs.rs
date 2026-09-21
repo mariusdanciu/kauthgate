@@ -106,7 +106,7 @@ grpc:
   upstream:
     host: 127.0.0.1
     port: 50051
-  mappings:
+  rules:
     - name: flight
       request:
         service: arrow.flight.protocol.FlightService
@@ -126,7 +126,7 @@ http:
   upstream:
     host: 127.0.0.1
     port: 8081
-  mappings: []
+  rules: []
 "#;
 
     #[test]
@@ -141,7 +141,7 @@ http:
     #[test]
     fn deserializes_auth_policy() {
         let cfg = parse_yaml(FULL_CONFIG);
-        let policy = &cfg.grpc.mappings[0];
+        let policy = &cfg.grpc.rules[0];
         assert_eq!(policy.name, "flight");
         assert_eq!(
             policy.request.service.as_deref(),
@@ -180,16 +180,16 @@ grpc:
   upstream:
     host: localhost
     port: 50051
-  mappings: []
+  rules: []
 http:
   upstream:
     host: localhost
     port: 8081
-  mappings: []
+  rules: []
 "#;
         let cfg = parse_yaml(yaml);
         assert!(cfg.auth.token_review_audiences.is_empty());
-        assert!(cfg.grpc.mappings.is_empty());
+        assert!(cfg.grpc.rules.is_empty());
     }
 
     fn parse_binding(value: &str) -> Binding {
@@ -202,7 +202,7 @@ grpc:
   upstream:
     host: localhost
     port: 8080
-  mappings:
+  rules:
     - name: test
       request:
         service: svc
@@ -217,12 +217,12 @@ http:
   upstream:
     host: localhost
     port: 8081
-  mappings: []
+  rules: []
 "#,
             value = value
         );
         let cfg = parse_yaml(&yaml);
-        cfg.grpc.mappings[0].sar_resource_attributes.namespace.clone()
+        cfg.grpc.rules[0].sar_resource_attributes.namespace.clone()
     }
 
     #[test]
