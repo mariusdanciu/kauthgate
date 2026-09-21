@@ -7,17 +7,25 @@ use async_trait::async_trait;
 use pingora::http::ResponseHeader;
 use pingora::prelude::*;
 use pingora::proxy::{ProxyHttp, Session};
+use std::cell::OnceCell;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{error, info};
 
 pub struct HttpProxy {
     client: KubeAuthClient,
     config: Arc<ProxyConfig>,
+    peer: HttpPeer,
 }
 
 impl HttpProxy {
     pub fn new(config: Arc<ProxyConfig>, client: KubeAuthClient) -> Self {
-        Self { config, client }
+        let peer = HttpPeer::new(
+            (config.http.upstream.host.clone(), config.http.upstream.port),
+            false,
+            String::new(),
+        );
+        Self { config, client, peer }
     }
 
     async fn error_response(&self, status_code: u16, message: &str, session: &mut Session) -> Result<bool> {
@@ -36,30 +44,33 @@ impl ProxyHttp for HttpProxy {
     fn new_ctx(&self) -> Self::CTX {}
 
     async fn request_filter(&self, session: &mut Session, _ctx: &mut Self::CTX) -> Result<bool> {
-        let path = session.req_header().uri.path().to_string();
-        let method = session.req_header().method.to_string().to_lowercase();
+        let path = session.req_header().uri.path();
+        let method = session.req_header().method.as_str();
 
-        let authorization = get_header(session, "authorization").unwrap_or("".to_string());
-
-        let bearer_token = authorization.strip_prefix("Bearer ").unwrap_or("");
+        let bearer_token = session
+            .req_header()
+            .headers
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .unwrap_or("");
 
         let auth_info = self.client.authenticate(bearer_token).await;
 
         match auth_info {
             Ok(auth_info) => {
+                let query_map: OnceCell<HashMap<&str, &str>> = OnceCell::new();
                 for policy in &self.config.http.mappings {
                     if let Some(vars) = check_mapping(
                         policy,
-                        &path,
-                        &method,
+                        path,
+                        method,
                         |header| get_header(session, header),
                         |param| {
-                            session.req_header().uri.query().and_then(|q| {
-                                q.split('&')
-                                    .filter_map(|pair| pair.split_once('='))
-                                    .find(|(k, _)| *k == param)
-                                    .map(|(_, v)| v.to_string())
-                            })
+                            query_map
+                                .get_or_init(|| parse_query(session.req_header().uri.query()))
+                                .get(param)
+                                .map(|v| v.to_string())
                         },
                     ) {
                         let resource_attributes = compile_resource_attributes(&policy.sar_resource_attributes, &vars);
@@ -86,11 +97,12 @@ impl ProxyHttp for HttpProxy {
     }
 
     async fn upstream_peer(&self, _session: &mut Session, _ctx: &mut Self::CTX) -> Result<Box<HttpPeer>> {
-        let peer = HttpPeer::new(
-            (self.config.http.upstream.host.clone(), self.config.http.upstream.port),
-            false,
-            String::new(),
-        );
-        Ok(Box::new(peer))
+        Ok(Box::new(self.peer.clone()))
     }
+}
+
+fn parse_query(query: Option<&str>) -> HashMap<&str, &str> {
+    query
+        .map(|q| q.split('&').filter_map(|pair| pair.split_once('=')).collect())
+        .unwrap_or_default()
 }

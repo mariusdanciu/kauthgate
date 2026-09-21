@@ -3,17 +3,11 @@ use k8s_openapi::api::authorization::v1::{ResourceAttributes, SubjectAccessRevie
 use kube::api::PostParams;
 use kube::{Api, Client};
 use moka::future::Cache;
-use sha2::{Digest, Sha256};
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 use tracing::{debug, error, info, warn};
-
-fn hash_token(token: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(token.as_bytes());
-    format!("{:x}", hasher.finalize())
-}
 
 #[derive(Error, Debug, Clone)]
 pub enum AuthError {
@@ -34,8 +28,8 @@ pub struct AuthInfo {
 struct Inner {
     client: tokio::sync::OnceCell<Client>,
     token_review_audiences: Vec<String>,
-    token_cache: Cache<String, Result<AuthInfo, AuthError>>,
-    sar_cache: Cache<String, bool>,
+    token_cache: Cache<u64, Result<AuthInfo, AuthError>>,
+    sar_cache: Cache<u64, bool>,
 }
 
 #[derive(Clone)]
@@ -70,7 +64,9 @@ impl KubeAuthClient {
         let client = self.client().await?.clone();
         let token_owned = token.to_string();
         let audiences = self.inner.token_review_audiences.clone();
-        let cache_key = hash_token(token);
+        let mut hasher = DefaultHasher::new();
+        token.hash(&mut hasher);
+        let cache_key = hasher.finish();
 
         self.inner.token_cache
             .try_get_with(cache_key, async move {
@@ -130,15 +126,14 @@ impl KubeAuthClient {
         auth_info: &AuthInfo,
         resource_attributes: &ResourceAttributes,
     ) -> Result<(), AuthError> {
-        let key = format!(
-            "{}:{:?}:{}:{}:{}:{}",
-            auth_info.username,
-            auth_info.groups,
-            resource_attributes.namespace.as_deref().unwrap_or(""),
-            resource_attributes.group.as_deref().unwrap_or(""),
-            resource_attributes.resource.as_deref().unwrap_or(""),
-            resource_attributes.verb.as_deref().unwrap_or(""),
-        );
+        let mut hasher = DefaultHasher::new();
+        auth_info.username.hash(&mut hasher);
+        auth_info.groups.hash(&mut hasher);
+        resource_attributes.namespace.hash(&mut hasher);
+        resource_attributes.group.hash(&mut hasher);
+        resource_attributes.resource.hash(&mut hasher);
+        resource_attributes.verb.hash(&mut hasher);
+        let key = hasher.finish();
         let client = self.client().await?.clone();
         let username = auth_info.username.clone();
         let groups = auth_info.groups.clone();

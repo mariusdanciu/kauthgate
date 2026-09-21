@@ -13,11 +13,23 @@ use tracing::{error, info};
 pub struct GrpcProxy {
     client: KubeAuthClient,
     config: Arc<ProxyConfig>,
+    peer: HttpPeer,
 }
 
 impl GrpcProxy {
     pub fn new(config: Arc<ProxyConfig>, client: KubeAuthClient) -> Self {
-        Self { config, client }
+        let mut peer = HttpPeer::new(
+            (config.grpc.upstream.host.clone(), config.grpc.upstream.port),
+            false,
+            String::new(),
+        );
+        peer.options.set_http_version(2, 2);
+
+        Self {
+            config,
+            client,
+            peer,
+        }
     }
 
     async fn error_response(&self, status_code: u8, message: &str, session: &mut Session) -> Result<bool> {
@@ -43,9 +55,13 @@ impl ProxyHttp for GrpcProxy {
         info!("request_filter");
         let path = session.req_header().uri.path();
 
-        let authorization = get_header(session, "authorization").unwrap_or("".to_string());
-
-        let bearer_token = authorization.strip_prefix("Bearer ").unwrap_or("");
+        let bearer_token = session
+            .req_header()
+            .headers
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .unwrap_or("");
 
         let (service, action) = parse_grpc_path(path);
 
@@ -79,13 +95,7 @@ impl ProxyHttp for GrpcProxy {
     }
 
     async fn upstream_peer(&self, _session: &mut Session, _ctx: &mut Self::CTX) -> Result<Box<HttpPeer>> {
-        let mut peer = HttpPeer::new(
-            (self.config.grpc.upstream.host.clone(), self.config.grpc.upstream.port),
-            false,
-            String::new(),
-        );
-        peer.options.set_http_version(2, 2);
-        Ok(Box::new(peer))
+        Ok(Box::new(self.peer.clone()))
     }
 }
 

@@ -8,7 +8,7 @@ pub(crate) fn check_mapping(
     grpc_method: &str,
     get_header: impl Fn(&str) -> Option<String>,
 ) -> Option<HashMap<String, String>> {
-    let mut variables = HashMap::new();
+    let mut variables = HashMap::with_capacity(10);
 
     if let Some(svc) = &policy.request.service
         && svc != service
@@ -17,7 +17,7 @@ pub(crate) fn check_mapping(
     }
 
     if let Some(methods) = &policy.request.grpc_methods
-        && !methods.contains(&grpc_method.to_string())
+        && !methods.iter().any(|m| m == grpc_method)
     {
         return None;
     }
