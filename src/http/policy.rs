@@ -1,5 +1,6 @@
 use crate::config::defs::Binding;
 use crate::config::http::RBACMapping;
+use crate::utils::proxy::path_to_vec;
 use std::collections::HashMap;
 use tracing::info;
 
@@ -47,10 +48,7 @@ pub(crate) fn check_mapping(
 ) -> Option<HashMap<String, String>> {
     let mut variables = HashMap::with_capacity(10);
 
-    let parts: Vec<&str> = path
-        .split('/')
-        .filter(|s| !s.is_empty())
-        .collect();
+    let parts: Vec<&str> = path_to_vec(path);
 
     if let Some(mapping_path) = &policy.request.path {
         if let Some(p_vars) = check_path(mapping_path, &parts) {
@@ -120,12 +118,6 @@ mod tests {
     use crate::config::defs::{Binding, Entity, SARAttributes};
     use crate::config::http::{RBACMapping, RequestMatch};
 
-    fn segments(path: &str) -> Vec<&str> {
-        path.split('/')
-            .filter(|s| !s.is_empty())
-            .collect()
-    }
-
     fn path_bindings(parts: &[&str]) -> Vec<Binding> {
         parts.iter().map(|s| Binding::from_str(s)).collect()
     }
@@ -146,7 +138,7 @@ mod tests {
         RBACMapping {
             name: "test".into(),
             request: RequestMatch {
-                path: path.map(|p| path_bindings(&segments(p))),
+                path: path.map(|p| path_bindings(&path_to_vec(p))),
                 methods: methods.map(|m| m.iter().map(|s| s.to_string()).collect()),
                 headers,
                 query_params,
@@ -178,14 +170,14 @@ mod tests {
 
     #[test]
     fn path_exact_match() {
-        let result = check_path(&path_bindings(&["api", "v1", "users"]), &segments("/api/v1/users"));
+        let result = check_path(&path_bindings(&["api", "v1", "users"]), &path_to_vec("/api/v1/users"));
         assert!(result.is_some());
         assert!(result.unwrap().is_empty());
     }
 
     #[test]
     fn path_mismatch() {
-        let result = check_path(&path_bindings(&["api", "v2", "users"]), &segments("/api/v1/users"));
+        let result = check_path(&path_bindings(&["api", "v2", "users"]), &path_to_vec("/api/v1/users"));
         assert!(result.is_none());
     }
 
@@ -193,7 +185,7 @@ mod tests {
     fn path_variable_extraction() {
         let result = check_path(
             &path_bindings(&["api", "{version}", "tenants", "{tid}"]),
-            &segments("/api/v1/tenants/acme"),
+            &path_to_vec("/api/v1/tenants/acme"),
         );
         let vars = result.unwrap();
         assert_eq!(vars.get("version").unwrap(), "v1");
@@ -202,31 +194,31 @@ mod tests {
 
     #[test]
     fn path_wildcard_matches_any_segment() {
-        let result = check_path(&path_bindings(&["api", "*", "users"]), &segments("/api/v1/users"));
+        let result = check_path(&path_bindings(&["api", "*", "users"]), &path_to_vec("/api/v1/users"));
         assert!(result.is_some());
     }
 
     #[test]
     fn path_wildcard_does_not_match_different_suffix() {
-        let result = check_path(&path_bindings(&["api", "*", "users"]), &segments("/api/v1/items"));
+        let result = check_path(&path_bindings(&["api", "*", "users"]), &path_to_vec("/api/v1/items"));
         assert!(result.is_none());
     }
 
     #[test]
     fn path_globstar_matches_everything_after() {
-        let result = check_path(&path_bindings(&["api", "**"]), &segments("/api/v1/users/123/profile"));
+        let result = check_path(&path_bindings(&["api", "**"]), &path_to_vec("/api/v1/users/123/profile"));
         assert!(result.is_some());
     }
 
     #[test]
     fn path_shorter_request_rejected() {
-        let result = check_path(&path_bindings(&["api", "v1", "users"]), &segments("/api"));
+        let result = check_path(&path_bindings(&["api", "v1", "users"]), &path_to_vec("/api"));
         assert!(result.is_none());
     }
 
     #[test]
     fn path_longer_request_accepted_when_pattern_shorter() {
-        let result = check_path(&path_bindings(&["api", "v1"]), &segments("/api/v1/users/extra"));
+        let result = check_path(&path_bindings(&["api", "v1"]), &path_to_vec("/api/v1/users/extra"));
         assert!(result.is_some());
     }
 
@@ -284,14 +276,7 @@ mod tests {
                 verb: Binding::Literal("v".into()),
             },
         };
-        let vars = check_mapping(
-            &m,
-            "/tenants/acme/resources",
-            "GET",
-            no_header,
-            no_query,
-        )
-        .unwrap();
+        let vars = check_mapping(&m, "/tenants/acme/resources", "GET", no_header, no_query).unwrap();
         assert_eq!(vars.get("tid").unwrap(), "acme");
     }
 

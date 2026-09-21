@@ -37,3 +37,57 @@ pub(crate) fn compile_resource_attributes(
         ..Default::default()
     }
 }
+
+pub(crate) fn parse_bearer_token(session: &Session) -> &str {
+    session
+        .req_header()
+        .headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .unwrap_or("")
+}
+
+pub(crate) fn path_to_vec(path: &str) -> Vec<&str> {
+    path.split('/').filter(|s| !s.is_empty()).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::path_to_vec;
+
+    #[test]
+    fn splits_absolute_path() {
+        assert_eq!(path_to_vec("/api/v1/users"), vec!["api", "v1", "users"]);
+    }
+
+    #[test]
+    fn splits_relative_path() {
+        assert_eq!(path_to_vec("api/v1"), vec!["api", "v1"]);
+    }
+
+    #[test]
+    fn root_path_returns_empty() {
+        assert!(path_to_vec("/").is_empty());
+    }
+
+    #[test]
+    fn empty_string_returns_empty() {
+        assert!(path_to_vec("").is_empty());
+    }
+
+    #[test]
+    fn ignores_consecutive_slashes() {
+        assert_eq!(path_to_vec("/api//v1///users"), vec!["api", "v1", "users"]);
+    }
+
+    #[test]
+    fn trailing_slash_ignored() {
+        assert_eq!(path_to_vec("/api/v1/"), vec!["api", "v1"]);
+    }
+
+    #[test]
+    fn single_segment() {
+        assert_eq!(path_to_vec("/health"), vec!["health"]);
+    }
+}

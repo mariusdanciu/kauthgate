@@ -3,6 +3,7 @@ use crate::grpc::policy::check_mapping;
 use crate::kube::auth::KubeAuthClient;
 use crate::utils::proxy::compile_resource_attributes;
 use crate::utils::proxy::get_header;
+use crate::utils::proxy::parse_bearer_token;
 use async_trait::async_trait;
 use pingora::http::ResponseHeader;
 use pingora::prelude::*;
@@ -51,13 +52,7 @@ impl ProxyHttp for GrpcProxy {
         info!("request_filter");
         let path = session.req_header().uri.path();
 
-        let bearer_token = session
-            .req_header()
-            .headers
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.strip_prefix("Bearer "))
-            .unwrap_or("");
+        let bearer_token = parse_bearer_token(session);
 
         let (service, action) = parse_grpc_path(path);
 
