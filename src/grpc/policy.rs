@@ -176,6 +176,25 @@ pub mod tests {
     }
 
     #[test]
+    fn match_policy_all_conditions_none_matches_everything() {
+        let p = RBACMapping {
+            name: "catch-all".into(),
+            request: RequestMatch {
+                service: None,
+                grpc_methods: None,
+                headers: None,
+            },
+            sar_resource_attributes: SARAttributes {
+                namespace: Binding::Literal("default".into()),
+                api_group: Binding::Literal("example.io".into()),
+                resource: Binding::Literal("widgets".into()),
+                verb: Binding::Literal("get".into()),
+            },
+        };
+        assert!(check_mapping(&p, "any.Service", "AnyMethod", no_header).is_some());
+    }
+
+    #[test]
     fn match_policy_injects_service_and_method() {
         let p = policy("my.Service", &["GetItem"], vec![]);
         let vars = check_mapping(&p, "my.Service", "GetItem", no_header).unwrap();
