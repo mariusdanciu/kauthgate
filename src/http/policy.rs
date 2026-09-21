@@ -144,10 +144,11 @@ mod tests {
                 query_params,
             },
             sar_resource_attributes: SARAttributes {
-                namespace: Binding::Literal("ns".into()),
-                api_group: Binding::Literal("g".into()),
-                resource: Binding::Literal("r".into()),
-                verb: Binding::Literal("v".into()),
+                namespace: Some(Binding::Literal("ns".into())),
+                api_group: Some(Binding::Literal("g".into())),
+                resource: Some(Binding::Literal("r".into())),
+                sub_resource: None,
+                verb: Some(Binding::Literal("v".into())),
             },
         }
     }
@@ -270,10 +271,11 @@ mod tests {
                 query_params: None,
             },
             sar_resource_attributes: SARAttributes {
-                namespace: Binding::Variable("tid".into()),
-                api_group: Binding::Literal("g".into()),
-                resource: Binding::Literal("r".into()),
-                verb: Binding::Literal("v".into()),
+                namespace: Some(Binding::Variable("tid".into())),
+                api_group: Some(Binding::Literal("g".into())),
+                resource: Some(Binding::Literal("r".into())),
+                sub_resource: None,
+                verb: Some(Binding::Literal("v".into())),
             },
         };
         let vars = check_rule(&m, "/tenants/acme/resources", "GET", no_header, no_query).unwrap();
@@ -398,10 +400,11 @@ mod tests {
                 query_params: None,
             },
             sar_resource_attributes: SARAttributes {
-                namespace: Binding::Variable("tid".into()),
-                api_group: Binding::Literal("g".into()),
-                resource: Binding::Literal("r".into()),
-                verb: Binding::Literal("v".into()),
+                namespace: Some(Binding::Variable("tid".into())),
+                api_group: Some(Binding::Literal("g".into())),
+                resource: Some(Binding::Literal("r".into())),
+                sub_resource: None,
+                verb: Some(Binding::Literal("v".into())),
             },
         };
         let vars = check_rule(

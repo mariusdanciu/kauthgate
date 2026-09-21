@@ -49,14 +49,14 @@ fn main() -> Result<()> {
 
     let config = Arc::new(config);
 
-    let mut server = Server::new(None).unwrap();
+    let mut server = Server::new(None).expect("failed to create server");
     server.bootstrap();
 
     let grpc_proxy = GrpcProxy::new(config.clone(), kube_auth.clone());
     let mut grpc_service = http_proxy_service(&server.configuration, grpc_proxy);
     let mut h2c_options = pingora::apps::HttpServerOptions::default();
     h2c_options.h2c = true;
-    grpc_service.app_logic_mut().unwrap().server_options = Some(h2c_options);
+    grpc_service.app_logic_mut().expect("failed to access gRPC service app logic").server_options = Some(h2c_options);
     grpc_service.add_tcp("0.0.0.0:6188");
     server.add_service(grpc_service);
 

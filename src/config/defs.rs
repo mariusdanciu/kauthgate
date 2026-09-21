@@ -28,15 +28,16 @@ impl Binding {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct SARAttributes {
-    #[serde(deserialize_with = "deserialize_binding")]
-    pub namespace: Binding,
-    #[serde(rename = "api-group")]
-    #[serde(deserialize_with = "deserialize_binding")]
-    pub api_group: Binding,
-    #[serde(deserialize_with = "deserialize_binding")]
-    pub resource: Binding,
-    #[serde(deserialize_with = "deserialize_binding")]
-    pub verb: Binding,
+    #[serde(default, deserialize_with = "deserialize_optional_binding")]
+    pub namespace: Option<Binding>,
+    #[serde(rename = "api-group", default, deserialize_with = "deserialize_optional_binding")]
+    pub api_group: Option<Binding>,
+    #[serde(default, deserialize_with = "deserialize_optional_binding")]
+    pub resource: Option<Binding>,
+    #[serde(rename = "sub-resource", default, deserialize_with = "deserialize_optional_binding")]
+    pub sub_resource: Option<Binding>,
+    #[serde(default, deserialize_with = "deserialize_optional_binding")]
+    pub verb: Option<Binding>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -75,12 +76,15 @@ where
     D: Deserializer<'de>,
 {
     let s = String::deserialize(deserializer)?;
-    if s.starts_with('{') && s.ends_with('}') {
-        return Ok(Binding::Variable(
-            s.strip_prefix('{').unwrap().strip_suffix('}').unwrap().to_string(),
-        ));
-    }
-    Ok(Binding::Literal(s))
+    Ok(Binding::from_str(&s))
+}
+
+pub(crate) fn deserialize_optional_binding<'de, D>(deserializer: D) -> std::result::Result<Option<Binding>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    Ok(Some(Binding::from_str(&s)))
 }
 
 #[cfg(test)]
@@ -157,17 +161,20 @@ http:
         assert_eq!(headers[0].value, Binding::Variable("tenant-id".into()));
         assert_eq!(
             policy.sar_resource_attributes.namespace,
-            Binding::Variable("tenant-id".into())
+            Some(Binding::Variable("tenant-id".into()))
         );
         assert_eq!(
             policy.sar_resource_attributes.api_group,
-            Binding::Literal("example.io".into())
+            Some(Binding::Literal("example.io".into()))
         );
         assert_eq!(
             policy.sar_resource_attributes.resource,
-            Binding::Literal("widgets".into())
+            Some(Binding::Literal("widgets".into()))
         );
-        assert_eq!(policy.sar_resource_attributes.verb, Binding::Literal("get".into()));
+        assert_eq!(
+            policy.sar_resource_attributes.verb,
+            Some(Binding::Literal("get".into()))
+        );
     }
 
     #[test]
@@ -222,7 +229,7 @@ http:
             value = value
         );
         let cfg = parse_yaml(&yaml);
-        cfg.grpc.rules[0].sar_resource_attributes.namespace.clone()
+        cfg.grpc.rules[0].sar_resource_attributes.namespace.clone().unwrap()
     }
 
     #[test]

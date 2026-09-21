@@ -65,10 +65,11 @@ pub mod tests {
                 headers: if headers.is_empty() { None } else { Some(headers) },
             },
             sar_resource_attributes: SARAttributes {
-                namespace: Binding::Variable("tenant".into()),
-                api_group: Binding::Literal("example.io".into()),
-                resource: Binding::Literal("widgets".into()),
-                verb: Binding::Literal("get".into()),
+                namespace: Some(Binding::Variable("tenant".into())),
+                api_group: Some(Binding::Literal("example.io".into())),
+                resource: Some(Binding::Literal("widgets".into())),
+                sub_resource: None,
+                verb: Some(Binding::Literal("get".into())),
             },
         }
     }
@@ -185,10 +186,11 @@ pub mod tests {
                 headers: None,
             },
             sar_resource_attributes: SARAttributes {
-                namespace: Binding::Literal("default".into()),
-                api_group: Binding::Literal("example.io".into()),
-                resource: Binding::Literal("widgets".into()),
-                verb: Binding::Literal("get".into()),
+                namespace: Some(Binding::Literal("default".into())),
+                api_group: Some(Binding::Literal("example.io".into())),
+                resource: Some(Binding::Literal("widgets".into())),
+                sub_resource: None,
+                verb: Some(Binding::Literal("get".into())),
             },
         };
         assert!(check_rule(&p, "any.Service", "AnyMethod", no_header).is_some());

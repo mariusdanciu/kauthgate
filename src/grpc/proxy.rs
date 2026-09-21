@@ -35,8 +35,14 @@ impl GrpcProxy {
         session.write_response_header(Box::new(resp), false).await?;
 
         let mut trailers = pingora::http::HMap::new();
-        trailers.insert("grpc-status", status_code.to_string().parse().unwrap());
-        trailers.insert("grpc-message", message.parse().unwrap());
+        trailers.insert(
+            "grpc-status",
+            status_code.to_string().parse().map_err(|e| Error::because(ErrorType::InternalError, "invalid grpc-status header", e))?,
+        );
+        trailers.insert(
+            "grpc-message",
+            message.parse().map_err(|e| Error::because(ErrorType::InternalError, "invalid grpc-message header", e))?,
+        );
         session.downstream_session.write_response_trailers(trailers).await?;
         Ok(true)
     }
