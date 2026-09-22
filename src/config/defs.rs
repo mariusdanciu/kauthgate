@@ -52,6 +52,22 @@ pub struct AuthConfig {
     pub cache_ttl_secs: u64,
     #[serde(rename = "token-review-audiences")]
     pub token_review_audiences: Vec<String>,
+    #[serde(rename = "user-header", default = "default_user_header")]
+    pub user_header: String,
+    #[serde(rename = "groups-header", default = "default_groups_header")]
+    pub groups_header: String,
+    #[serde(rename = "groups-header-delimiter", default = "default_groups_header_delimiter")]
+    pub groups_header_delimiter: String,
+}
+
+fn default_user_header() -> String {
+    "x-remote-user".into()
+}
+fn default_groups_header() -> String {
+    "x-remote-groups".into()
+}
+fn default_groups_header_delimiter() -> String {
+    "|".into()
 }
 
 #[derive(Debug, Clone, Deserialize)]

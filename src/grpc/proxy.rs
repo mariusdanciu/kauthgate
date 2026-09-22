@@ -3,6 +3,7 @@ use crate::grpc::policy::check_rule;
 use crate::kube::auth::KubeAuthClient;
 use crate::utils::proxy::compile_resource_attributes;
 use crate::utils::proxy::get_header;
+use crate::utils::proxy::inject_headers;
 use crate::utils::proxy::parse_bearer_token;
 use async_trait::async_trait;
 use pingora::http::ResponseHeader;
@@ -37,11 +38,16 @@ impl GrpcProxy {
         let mut trailers = pingora::http::HMap::new();
         trailers.insert(
             "grpc-status",
-            status_code.to_string().parse().map_err(|e| Error::because(ErrorType::InternalError, "invalid grpc-status header", e))?,
+            status_code
+                .to_string()
+                .parse()
+                .map_err(|e| Error::because(ErrorType::InternalError, "invalid grpc-status header", e))?,
         );
         trailers.insert(
             "grpc-message",
-            message.parse().map_err(|e| Error::because(ErrorType::InternalError, "invalid grpc-message header", e))?,
+            message
+                .parse()
+                .map_err(|e| Error::because(ErrorType::InternalError, "invalid grpc-message header", e))?,
         );
         session.downstream_session.write_response_trailers(trailers).await?;
         Ok(true)
@@ -76,6 +82,7 @@ impl ProxyHttp for GrpcProxy {
                             error!("authorization failed: {:?}", e);
                             return self.error_response(16, &e.to_string(), session).await;
                         }
+                        inject_headers(session, &self.config, &auth_info)?;
                         return Ok(false); // Successfully authorized. Continue to upstream.
                     } else {
                         info!("policy does not match: {:?}", policy.name);

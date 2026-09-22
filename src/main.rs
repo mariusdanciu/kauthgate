@@ -65,5 +65,8 @@ fn main() -> Result<()> {
     http_service.add_tcp("0.0.0.0:8080");
     server.add_service(http_service);
 
+    info!("user header: {}", config.auth.user_header);
+    info!("groups header: {}", config.auth.groups_header);
+    info!("groups header delimiter: {}", config.auth.groups_header_delimiter);
     server.run_forever();
 }

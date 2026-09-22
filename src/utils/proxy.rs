@@ -1,8 +1,16 @@
-use crate::config::Binding;
-use crate::config::SARAttributes;
+use crate::config::{Binding, ProxyConfig, SARAttributes};
+use crate::kube::auth::AuthInfo;
 use k8s_openapi::api::authorization::v1::ResourceAttributes;
 use pingora::proxy::Session;
 use std::collections::HashMap;
+
+pub(crate) fn inject_headers(session: &mut Session, config: &ProxyConfig, auth_info: &AuthInfo) -> Result<(), Box<pingora::Error>> {
+    let groups_value = auth_info.groups.join(&config.auth.groups_header_delimiter);
+    let headers = session.req_header_mut();
+    headers.insert_header(config.auth.user_header.clone(), &auth_info.username)?;
+    headers.insert_header(config.auth.groups_header.clone(), &groups_value)?;
+    Ok(())
+}
 
 pub(crate) fn get_header(session: &Session, header: &str) -> Option<String> {
     session

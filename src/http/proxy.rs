@@ -3,6 +3,7 @@ use crate::http::policy::check_rule;
 use crate::kube::auth::KubeAuthClient;
 use crate::utils::proxy::compile_resource_attributes;
 use crate::utils::proxy::get_header;
+use crate::utils::proxy::inject_headers;
 use crate::utils::proxy::parse_bearer_token;
 use async_trait::async_trait;
 use pingora::http::ResponseHeader;
@@ -76,6 +77,8 @@ impl ProxyHttp for HttpProxy {
                             error!("authorization failed: {:?}", e);
                             return self.error_response(403, &e.to_string(), session).await;
                         }
+                        inject_headers(session, &self.config, &auth_info)?;
+
                         return Ok(false);
                     } else {
                         info!("policy does not match: {:?}", policy.name);
