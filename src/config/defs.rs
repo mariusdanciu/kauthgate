@@ -70,9 +70,29 @@ fn default_groups_header_delimiter() -> String {
     "|".into()
 }
 
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct TLSConfig {
+    pub cert_file: String,
+    pub key_file: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Listener {
+    pub host: String,
+    pub port: u16,
+    pub tls: Option<TLSConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PrometheusConfig {
+    pub host: String,
+    pub port: u16,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProxyConfig {
     pub auth: AuthConfig,
+    pub prometheus: Option<PrometheusConfig>,
     pub grpc: GrpcConfig,
     pub http: HttpConfig,
 }
@@ -123,6 +143,9 @@ auth:
     - aud1
 
 grpc:
+  listener:
+    host: 0.0.0.0
+    port: 6188
   upstream:
     host: 127.0.0.1
     port: 50051
@@ -143,6 +166,9 @@ grpc:
         verb: get
 
 http:
+  listener:
+    host: 0.0.0.0
+    port: 8080
   upstream:
     host: 127.0.0.1
     port: 8081
@@ -200,11 +226,17 @@ auth:
   cache-ttl-secs: 60
   token-review-audiences: []
 grpc:
+  listener:
+    host: 0.0.0.0
+    port: 6188
   upstream:
     host: localhost
     port: 50051
   rules: []
 http:
+  listener:
+    host: 0.0.0.0
+    port: 8080
   upstream:
     host: localhost
     port: 8081
@@ -222,6 +254,9 @@ auth:
   cache-ttl-secs: 60
   token-review-audiences: []
 grpc:
+  listener:
+    host: 0.0.0.0
+    port: 6188
   upstream:
     host: localhost
     port: 8080
@@ -237,6 +272,9 @@ grpc:
         resource: r
         verb: v
 http:
+  listener:
+    host: 0.0.0.0
+    port: 8080
   upstream:
     host: localhost
     port: 8081

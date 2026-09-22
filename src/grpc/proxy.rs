@@ -1,6 +1,7 @@
 use crate::config::ProxyConfig;
 use crate::grpc::policy::check_rule;
 use crate::kube::auth::KubeAuthClient;
+use crate::utils::metrics::{REQUEST_DURATION, REQUEST_TOTAL};
 use crate::utils::proxy::compile_resource_attributes;
 use crate::utils::proxy::get_header;
 use crate::utils::proxy::inject_headers;
@@ -10,6 +11,7 @@ use pingora::http::ResponseHeader;
 use pingora::prelude::*;
 use pingora::proxy::{ProxyHttp, Session};
 use std::sync::Arc;
+use std::time::Instant;
 use tracing::{error, info};
 
 pub struct GrpcProxy {
@@ -54,11 +56,17 @@ impl GrpcProxy {
     }
 }
 
+pub struct RequestContext {
+    start: Instant,
+}
+
 #[async_trait]
 impl ProxyHttp for GrpcProxy {
-    type CTX = ();
+    type CTX = RequestContext;
 
-    fn new_ctx(&self) -> Self::CTX {}
+    fn new_ctx(&self) -> Self::CTX {
+        RequestContext { start: Instant::now() }
+    }
 
     async fn request_filter(&self, session: &mut Session, _ctx: &mut Self::CTX) -> Result<bool> {
         info!("request_filter");
@@ -100,6 +108,17 @@ impl ProxyHttp for GrpcProxy {
 
     async fn upstream_peer(&self, _session: &mut Session, _ctx: &mut Self::CTX) -> Result<Box<HttpPeer>> {
         Ok(Box::new(self.peer.clone()))
+    }
+
+    async fn logging(&self, session: &mut Session, _e: Option<&Error>, ctx: &mut Self::CTX) {
+        let status = session
+            .response_written()
+            .and_then(|r| r.status.as_str().parse::<u16>().ok())
+            .unwrap_or(0)
+            .to_string();
+        let duration = ctx.start.elapsed().as_secs_f64();
+        REQUEST_TOTAL.with_label_values(&["grpc", &status]).inc();
+        REQUEST_DURATION.with_label_values(&["grpc", &status]).observe(duration);
     }
 }
 

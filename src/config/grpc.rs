@@ -3,6 +3,7 @@ use serde::Deserialize;
 use crate::config::defs::Entity;
 use crate::config::defs::SARAttributes;
 use crate::config::defs::Upstream;
+use crate::config::defs::Listener;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct RequestMatch {
@@ -24,6 +25,7 @@ pub struct Rule {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GrpcConfig {
+    pub listener: Listener,
     pub upstream: Upstream,
     pub rules: Vec<Rule>,
 }

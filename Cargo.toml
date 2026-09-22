@@ -17,3 +17,4 @@ clap = { version = "4.6", features = ["derive"] }
 thiserror = "2.0"
 moka = {version = "0.12", features = ["future"]}
 tokio = { version = "1.52", features = ["rt-multi-thread", "macros", "signal"] }
+pingora-prometheus = "0.9"

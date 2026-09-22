@@ -9,7 +9,8 @@ An authentication and authorization gateway built on [Pingora](https://github.co
 3. **Policy matching** — the request is matched against configured rules based on service/method (gRPC) or path/method/headers/query-params (HTTP).
 4. **Variable extraction** — values from headers, path segments, and query strings are extracted into named variables using `{variable-name}` syntax.
 5. **Authorization** — a Kubernetes SubjectAccessReview is issued with the resolved resource attributes (namespace, apiGroup, resource, verb).
-6. If both checks pass, the request is proxied to the upstream backend. Otherwise, an error is returned (gRPC status 16 via trailers, or HTTP 401/403).
+6. **Header injection** — on success, the authenticated user's identity is injected into the request via configurable headers (`user-header` and `groups-header`) before proxying upstream. Any client-supplied values for these headers are overwritten.
+7. If both checks pass, the request is proxied to the upstream backend. Otherwise, an error is returned (gRPC status 16 via trailers, or HTTP 401/403).
 
 ## Configuration
 
@@ -19,8 +20,18 @@ The gateway is configured via a YAML file. It supports both gRPC and HTTP proxie
 auth:
   cache-ttl-secs: 300
   token-review-audiences: []
+  user-header: x-remote-user              # optional, default: x-remote-user
+  groups-header: x-remote-groups           # optional, default: x-remote-groups
+  groups-header-delimiter: "|"             # optional, default: ","
+
+prometheus:                                # optional, omit to disable
+  host: 0.0.0.0
+  port: 9090
 
 grpc:
+  listener:
+    host: 0.0.0.0
+    port: 6188
   upstream:
     host: 127.0.0.1
     port: 50051
@@ -42,6 +53,9 @@ grpc:
         verb: "get"
 
 http:
+  listener:
+    host: 0.0.0.0
+    port: 8080
   upstream:
     host: 127.0.0.1
     port: 8081
@@ -60,6 +74,25 @@ http:
         resource: data-connections
         verb: "create"
 ```
+
+### Auth settings
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `cache-ttl-secs` | *(required)* | TTL in seconds for TokenReview and SubjectAccessReview caches |
+| `token-review-audiences` | *(required)* | Audiences passed to the TokenReview API |
+| `user-header` | `x-remote-user` | Header injected with the authenticated username |
+| `groups-header` | `x-remote-groups` | Header injected with the user's groups |
+| `groups-header-delimiter` | `,` | Delimiter used to join multiple groups in the groups header |
+
+### Prometheus metrics
+
+When the optional `prometheus` section is present, the gateway exposes a `/` endpoint serving Prometheus-format metrics. Two custom metrics are exported:
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `rbac_gate_requests_total` | counter | `protocol`, `status` | Total requests processed |
+| `rbac_gate_request_duration_seconds` | histogram | `protocol`, `status` | Request duration in seconds |
 
 ### Variable extraction
 
@@ -114,7 +147,7 @@ sar-resource-attributes:
 rbac-gate --config config/config.yaml
 ```
 
-The gRPC proxy listens on port 6188 (h2c) and the HTTP proxy on port 8080.
+Listener addresses are configured per-protocol via `listener.host` and `listener.port` in the config file. When a `prometheus` section is present, a Prometheus metrics endpoint is exposed at the configured address.
 
 ### CLI options
 

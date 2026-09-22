@@ -56,17 +56,30 @@ fn main() -> Result<()> {
     let mut grpc_service = http_proxy_service(&server.configuration, grpc_proxy);
     let mut h2c_options = pingora::apps::HttpServerOptions::default();
     h2c_options.h2c = true;
-    grpc_service.app_logic_mut().expect("failed to access gRPC service app logic").server_options = Some(h2c_options);
-    grpc_service.add_tcp("0.0.0.0:6188");
+
+    grpc_service
+        .app_logic_mut()
+        .expect("failed to access gRPC service app logic")
+        .server_options = Some(h2c_options);
+    grpc_service.add_tcp(format!("{}:{}", config.grpc.listener.host, config.grpc.listener.port).as_str());
     server.add_service(grpc_service);
 
     let http_proxy = HttpProxy::new(config.clone(), kube_auth);
     let mut http_service = http_proxy_service(&server.configuration, http_proxy);
-    http_service.add_tcp("0.0.0.0:8080");
+    http_service.add_tcp(format!("{}:{}", config.http.listener.host, config.http.listener.port).as_str());
     server.add_service(http_service);
+
+    if let Some(prometheus_config) = config.prometheus.clone() {
+        let mut prometheus_service = pingora_prometheus::prometheus_http_service();
+        let addr = format!("{}:{}", prometheus_config.host, prometheus_config.port);
+        prometheus_service.add_tcp(addr.as_str());
+        server.add_service(prometheus_service);
+        info!("Prometheus metrics at {addr}");
+    }
 
     info!("user header: {}", config.auth.user_header);
     info!("groups header: {}", config.auth.groups_header);
     info!("groups header delimiter: {}", config.auth.groups_header_delimiter);
+
     server.run_forever();
 }

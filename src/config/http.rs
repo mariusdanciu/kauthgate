@@ -1,3 +1,4 @@
+use crate::config::defs::Listener;
 use crate::config::defs::{Binding, Entity, SARAttributes, Upstream};
 use serde::Deserialize;
 use serde::Deserializer;
@@ -45,6 +46,7 @@ pub struct Rule {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct HttpConfig {
+    pub listener: Listener,
     pub upstream: Upstream,
     pub rules: Vec<Rule>,
 }
