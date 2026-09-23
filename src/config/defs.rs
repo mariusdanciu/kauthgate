@@ -85,8 +85,7 @@ pub struct Listener {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct PrometheusConfig {
-    pub host: String,
-    pub port: u16,
+    pub listener: Listener,
 }
 
 #[derive(Debug, Clone, Deserialize)]

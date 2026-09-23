@@ -71,7 +71,7 @@ fn main() -> Result<()> {
 
     if let Some(prometheus_config) = config.prometheus.clone() {
         let mut prometheus_service = pingora_prometheus::prometheus_http_service();
-        let addr = format!("{}:{}", prometheus_config.host, prometheus_config.port);
+        let addr = format!("{}:{}", prometheus_config.listener.host, prometheus_config.listener.port);
         prometheus_service.add_tcp(addr.as_str());
         server.add_service(prometheus_service);
         info!("Prometheus metrics at {addr}");

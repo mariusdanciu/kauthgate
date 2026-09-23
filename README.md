@@ -25,8 +25,9 @@ auth:
   groups-header-delimiter: "|"             # optional, default: ","
 
 prometheus:                                # optional, omit to disable
-  host: 0.0.0.0
-  port: 9090
+  listener:
+    host: 0.0.0.0
+    port: 9090
 
 grpc:
   listener:
