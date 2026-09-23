@@ -2,10 +2,9 @@ use crate::config::ProxyConfig;
 use crate::grpc::policy::check_rule;
 use crate::kube::auth::KubeAuthClient;
 use crate::utils::metrics::{REQUEST_DURATION, REQUEST_TOTAL};
-use crate::utils::proxy::compile_resource_attributes;
 use crate::utils::proxy::get_header;
-use crate::utils::proxy::inject_headers;
 use crate::utils::proxy::parse_bearer_token;
+use crate::utils::proxy::run_authz;
 use async_trait::async_trait;
 use pingora::http::ResponseHeader;
 use pingora::prelude::*;
@@ -82,15 +81,19 @@ impl ProxyHttp for GrpcProxy {
             Ok(auth_info) => {
                 for policy in &self.config.grpc.rules {
                     if let Some(vars) = check_rule(policy, service, action, |header| get_header(session, header)) {
-                        let resource_attributes = compile_resource_attributes(&policy.sar_resource_attributes, &vars);
-
-                        let resp = self.client.authorize(&auth_info, &resource_attributes).await;
-
-                        if let Err(e) = resp {
-                            error!("authorization failed: {:?}", e);
+                        if let Err(e) = run_authz(
+                            session,
+                            &policy.sar_resource_attributes,
+                            &vars,
+                            &self.client,
+                            &auth_info,
+                            &self.config,
+                        )
+                        .await
+                        {
                             return self.error_response(16, &e.to_string(), session).await;
                         }
-                        inject_headers(session, &self.config, &auth_info)?;
+
                         return Ok(false); // Successfully authorized. Continue to upstream.
                     } else {
                         info!("policy does not match: {:?}", policy.name);

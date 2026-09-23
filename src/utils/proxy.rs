@@ -1,10 +1,17 @@
 use crate::config::{Binding, ProxyConfig, SARAttributes};
+use crate::kube::auth::AuthError;
 use crate::kube::auth::AuthInfo;
+use crate::kube::auth::KubeAuthClient;
 use k8s_openapi::api::authorization::v1::ResourceAttributes;
 use pingora::proxy::Session;
 use std::collections::HashMap;
+use tracing::error;
 
-pub(crate) fn inject_headers(session: &mut Session, config: &ProxyConfig, auth_info: &AuthInfo) -> Result<(), Box<pingora::Error>> {
+pub(crate) fn inject_headers(
+    session: &mut Session,
+    config: &ProxyConfig,
+    auth_info: &AuthInfo,
+) -> Result<(), Box<pingora::Error>> {
     let groups_value = auth_info.groups.join(&config.auth.groups_header_delimiter);
     let headers = session.req_header_mut();
     headers.insert_header(config.auth.user_header.clone(), &auth_info.username)?;
@@ -60,6 +67,26 @@ pub(crate) fn parse_bearer_token(session: &Session) -> &str {
 
 pub(crate) fn path_to_vec(path: &str) -> Vec<&str> {
     path.split('/').filter(|s| !s.is_empty()).collect()
+}
+
+pub(crate) async fn run_authz(
+    session: &mut Session,
+    sar_resource_attributes: &SARAttributes,
+    vars: &HashMap<String, String>,
+    client: &KubeAuthClient,
+    auth_info: &AuthInfo,
+    config: &ProxyConfig,
+) -> Result<(), AuthError> {
+    let resource_attributes = compile_resource_attributes(&sar_resource_attributes, &vars);
+
+    let resp = client.authorize(&auth_info, &resource_attributes).await;
+
+    if let Err(e) = resp {
+        error!("authorization failed: {:?}", e);
+        return Err(e);
+    }
+    inject_headers(session, &config, &auth_info).map_err(|e| AuthError::Internal(e.to_string()))?;
+    return Ok(()); // Successfully authorized. Continue to upstream.
 }
 
 #[cfg(test)]

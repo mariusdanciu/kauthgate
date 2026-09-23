@@ -70,6 +70,7 @@ fn default_groups_header_delimiter() -> String {
     "|".into()
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct TLSConfig {
     pub cert_file: String,
@@ -80,6 +81,7 @@ pub struct TLSConfig {
 pub struct Listener {
     pub host: String,
     pub port: u16,
+    #[allow(dead_code)]
     pub tls: Option<TLSConfig>,
 }
 
