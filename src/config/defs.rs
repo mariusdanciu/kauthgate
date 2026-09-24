@@ -32,6 +32,8 @@ pub struct SARAttributes {
     pub namespace: Option<Binding>,
     #[serde(rename = "api-group", default, deserialize_with = "deserialize_optional_binding")]
     pub api_group: Option<Binding>,
+    #[serde(rename = "api-version", default, deserialize_with = "deserialize_optional_binding")]
+    pub api_version: Option<Binding>,
     #[serde(default, deserialize_with = "deserialize_optional_binding")]
     pub resource: Option<Binding>,
     #[serde(rename = "sub-resource", default, deserialize_with = "deserialize_optional_binding")]

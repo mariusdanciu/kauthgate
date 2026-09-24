@@ -41,6 +41,7 @@ pub(crate) fn compile_resource_attributes(
 ) -> ResourceAttributes {
     let namespace = resolve(resource_attributes.namespace.as_ref(), variables);
     let group = resolve(resource_attributes.api_group.as_ref(), variables);
+    let api_version = resolve(resource_attributes.api_version.as_ref(), variables);
     let resource = resolve(resource_attributes.resource.as_ref(), variables);
     let sub_resource = resolve(resource_attributes.sub_resource.as_ref(), variables);
     let verb = resolve(resource_attributes.verb.as_ref(), variables);

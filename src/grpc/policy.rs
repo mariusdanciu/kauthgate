@@ -67,6 +67,7 @@ pub mod tests {
             sar_resource_attributes: SARAttributes {
                 namespace: Some(Binding::Variable("tenant".into())),
                 api_group: Some(Binding::Literal("example.io".into())),
+                api_version: None,
                 resource: Some(Binding::Literal("widgets".into())),
                 sub_resource: None,
                 verb: Some(Binding::Literal("get".into())),
@@ -188,6 +189,7 @@ pub mod tests {
             sar_resource_attributes: SARAttributes {
                 namespace: Some(Binding::Literal("default".into())),
                 api_group: Some(Binding::Literal("example.io".into())),
+                api_version: None,
                 resource: Some(Binding::Literal("widgets".into())),
                 sub_resource: None,
                 verb: Some(Binding::Literal("get".into())),

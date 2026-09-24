@@ -146,6 +146,7 @@ mod tests {
             sar_resource_attributes: SARAttributes {
                 namespace: Some(Binding::Literal("ns".into())),
                 api_group: Some(Binding::Literal("g".into())),
+                api_version: None,
                 resource: Some(Binding::Literal("r".into())),
                 sub_resource: None,
                 verb: Some(Binding::Literal("v".into())),
@@ -273,6 +274,7 @@ mod tests {
             sar_resource_attributes: SARAttributes {
                 namespace: Some(Binding::Variable("tid".into())),
                 api_group: Some(Binding::Literal("g".into())),
+                api_version: None,
                 resource: Some(Binding::Literal("r".into())),
                 sub_resource: None,
                 verb: Some(Binding::Literal("v".into())),
@@ -402,6 +404,7 @@ mod tests {
             sar_resource_attributes: SARAttributes {
                 namespace: Some(Binding::Variable("tid".into())),
                 api_group: Some(Binding::Literal("g".into())),
+                api_version: None,
                 resource: Some(Binding::Literal("r".into())),
                 sub_resource: None,
                 verb: Some(Binding::Literal("v".into())),
