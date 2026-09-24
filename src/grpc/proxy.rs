@@ -2,6 +2,7 @@ use crate::config::ProxyConfig;
 use crate::grpc::policy::check_rule;
 use crate::kube::auth::KubeAuthClient;
 use crate::utils::metrics::{REQUEST_DURATION, REQUEST_TOTAL};
+use crate::utils::proxy::AuthorizationInfo;
 use crate::utils::proxy::get_header;
 use crate::utils::proxy::parse_bearer_token;
 use crate::utils::proxy::run_authz;
@@ -12,7 +13,6 @@ use pingora::proxy::{ProxyHttp, Session};
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{error, info};
-
 pub struct GrpcProxy {
     client: KubeAuthClient,
     config: Arc<ProxyConfig>,
@@ -79,15 +79,17 @@ impl ProxyHttp for GrpcProxy {
 
         match auth_info {
             Ok(auth_info) => {
-                for policy in &self.config.grpc.rules {
-                    if let Some(vars) = check_rule(policy, service, action, |header| get_header(session, header)) {
+                for rule in &self.config.grpc.rules {
+                    if let Some(vars) = check_rule(rule, service, action, |header| get_header(session, header)) {
                         if let Err(e) = run_authz(
                             session,
-                            &policy.sar_resource_attributes,
-                            &vars,
-                            &self.client,
-                            &auth_info,
-                            &self.config,
+                            &AuthorizationInfo {
+                                sar_resource_attributes: &rule.sar_resource_attributes,
+                                vars: &vars,
+                                client: &self.client,
+                                auth_info: &auth_info,
+                                config: &self.config,
+                            },
                         )
                         .await
                         {
@@ -96,7 +98,7 @@ impl ProxyHttp for GrpcProxy {
 
                         return Ok(false); // Successfully authorized. Continue to upstream.
                     } else {
-                        info!("policy does not match: {:?}", policy.name);
+                        info!("policy does not match: {:?}", rule.name);
                     }
                 }
 

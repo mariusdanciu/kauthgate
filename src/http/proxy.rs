@@ -2,6 +2,7 @@ use crate::config::ProxyConfig;
 use crate::http::policy::check_rule;
 use crate::kube::auth::KubeAuthClient;
 use crate::utils::metrics::{REQUEST_DURATION, REQUEST_TOTAL};
+use crate::utils::proxy::AuthorizationInfo;
 use crate::utils::proxy::get_header;
 use crate::utils::proxy::parse_bearer_token;
 use crate::utils::proxy::run_authz;
@@ -14,7 +15,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{error, info};
-
 pub struct HttpProxy {
     client: KubeAuthClient,
     config: Arc<ProxyConfig>,
@@ -63,9 +63,9 @@ impl ProxyHttp for HttpProxy {
         match auth_info {
             Ok(auth_info) => {
                 let query_map: OnceCell<HashMap<&str, &str>> = OnceCell::new();
-                for policy in &self.config.http.rules {
+                for rule in &self.config.http.rules {
                     if let Some(vars) = check_rule(
-                        policy,
+                        rule,
                         path,
                         method,
                         |header| get_header(session, header),
@@ -78,11 +78,13 @@ impl ProxyHttp for HttpProxy {
                     ) {
                         if let Err(e) = run_authz(
                             session,
-                            &policy.sar_resource_attributes,
-                            &vars,
-                            &self.client,
-                            &auth_info,
-                            &self.config,
+                            &AuthorizationInfo {
+                                sar_resource_attributes: &rule.sar_resource_attributes,
+                                vars: &vars,
+                                client: &self.client,
+                                auth_info: &auth_info,
+                                config: &self.config,
+                            },
                         )
                         .await
                         {
@@ -91,7 +93,7 @@ impl ProxyHttp for HttpProxy {
 
                         return Ok(false);
                     } else {
-                        info!("policy does not match: {:?}", policy.name);
+                        info!("policy does not match: {:?}", rule.name);
                     }
                 }
 

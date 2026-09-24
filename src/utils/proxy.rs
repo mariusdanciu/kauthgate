@@ -2,10 +2,18 @@ use crate::config::{Binding, ProxyConfig, SARAttributes};
 use crate::kube::auth::AuthError;
 use crate::kube::auth::AuthInfo;
 use crate::kube::auth::KubeAuthClient;
+use crate::utils::ConfigVariables;
 use k8s_openapi::api::authorization::v1::ResourceAttributes;
 use pingora::proxy::Session;
-use std::collections::HashMap;
 use tracing::error;
+
+pub(crate) struct AuthorizationInfo<'a> {
+    pub sar_resource_attributes: &'a SARAttributes,
+    pub vars: &'a ConfigVariables,
+    pub client: &'a KubeAuthClient,
+    pub auth_info: &'a AuthInfo,
+    pub config: &'a ProxyConfig,
+}
 
 pub(crate) fn inject_headers(
     session: &mut Session,
@@ -28,7 +36,7 @@ pub(crate) fn get_header(session: &Session, header: &str) -> Option<String> {
         .map(|v| v.to_string())
 }
 
-fn resolve(value: Option<&Binding>, variables: &HashMap<String, String>) -> Option<String> {
+fn resolve(value: Option<&Binding>, variables: &ConfigVariables) -> Option<String> {
     match value? {
         Binding::Variable(name) => variables.get(name.as_str()).map(|s| s.to_string()),
         Binding::Literal(value) => Some(value.to_string()),
@@ -37,7 +45,7 @@ fn resolve(value: Option<&Binding>, variables: &HashMap<String, String>) -> Opti
 
 pub(crate) fn compile_resource_attributes(
     resource_attributes: &SARAttributes,
-    variables: &HashMap<String, String>,
+    variables: &ConfigVariables,
 ) -> ResourceAttributes {
     let namespace = resolve(resource_attributes.namespace.as_ref(), variables);
     let group = resolve(resource_attributes.api_group.as_ref(), variables);
@@ -71,24 +79,17 @@ pub(crate) fn path_to_vec(path: &str) -> Vec<&str> {
     path.split('/').filter(|s| !s.is_empty()).collect()
 }
 
-pub(crate) async fn run_authz(
-    session: &mut Session,
-    sar_resource_attributes: &SARAttributes,
-    vars: &HashMap<String, String>,
-    client: &KubeAuthClient,
-    auth_info: &AuthInfo,
-    config: &ProxyConfig,
-) -> Result<(), AuthError> {
-    let resource_attributes = compile_resource_attributes(&sar_resource_attributes, &vars);
+pub(crate) async fn run_authz(session: &mut Session, authz: &AuthorizationInfo<'_>) -> Result<(), AuthError> {
+    let resource_attributes = compile_resource_attributes(authz.sar_resource_attributes, authz.vars);
 
-    let resp = client.authorize(&auth_info, &resource_attributes).await;
+    let resp = authz.client.authorize(authz.auth_info, &resource_attributes).await;
 
     if let Err(e) = resp {
         error!("authorization failed: {:?}", e);
         return Err(e);
     }
-    inject_headers(session, &config, &auth_info).map_err(|e| AuthError::Internal(e.to_string()))?;
-    return Ok(()); // Successfully authorized. Continue to upstream.
+    inject_headers(session, authz.config, authz.auth_info).map_err(|e| AuthError::Internal(e.to_string()))?;
+    Ok(()) // Successfully authorized. Continue to upstream.
 }
 
 #[cfg(test)]

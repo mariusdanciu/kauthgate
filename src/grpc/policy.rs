@@ -1,5 +1,6 @@
 use crate::config::defs::Binding;
 use crate::config::grpc::Rule;
+use crate::utils::ConfigVariables;
 use std::collections::HashMap;
 
 pub(crate) fn check_rule(
@@ -7,7 +8,7 @@ pub(crate) fn check_rule(
     service: &str,
     grpc_method: &str,
     get_header: impl Fn(&str) -> Option<String>,
-) -> Option<HashMap<String, String>> {
+) -> Option<ConfigVariables> {
     let mut variables = HashMap::with_capacity(10);
 
     if let Some(svc) = &policy.request.service

@@ -1,10 +1,11 @@
 use crate::config::defs::Binding;
 use crate::config::http::Rule;
+use crate::utils::ConfigVariables;
 use crate::utils::proxy::path_to_vec;
 use std::collections::HashMap;
 use tracing::info;
 
-fn check_path(rule_path: &[Binding], request_path: &[&str]) -> Option<HashMap<String, String>> {
+fn check_path(rule_path: &[Binding], request_path: &[&str]) -> Option<ConfigVariables> {
     let mut variables = HashMap::with_capacity(10);
     let m_len = rule_path.len();
     let r_len = request_path.len();
@@ -45,7 +46,7 @@ pub(crate) fn check_rule(
     method: &str,
     get_header: impl Fn(&str) -> Option<String>,
     get_query: impl Fn(&str) -> Option<String>,
-) -> Option<HashMap<String, String>> {
+) -> Option<ConfigVariables> {
     let mut variables = HashMap::with_capacity(10);
 
     let parts: Vec<&str> = path_to_vec(path);
@@ -116,7 +117,7 @@ pub(crate) fn check_rule(
 mod tests {
     use super::*;
     use crate::config::defs::{Binding, Entity, SARAttributes};
-    use crate::config::http::{Rule, RequestMatch};
+    use crate::config::http::{RequestMatch, Rule};
 
     fn path_bindings(parts: &[&str]) -> Vec<Binding> {
         parts.iter().map(|s| Binding::from_str(s)).collect()
@@ -208,7 +209,10 @@ mod tests {
 
     #[test]
     fn path_globstar_matches_everything_after() {
-        let result = check_path(&path_bindings(&["api", "**"]), &path_to_vec("/api/v1/users/123/profile"));
+        let result = check_path(
+            &path_bindings(&["api", "**"]),
+            &path_to_vec("/api/v1/users/123/profile"),
+        );
         assert!(result.is_some());
     }
 

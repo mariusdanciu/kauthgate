@@ -1,4 +1,6 @@
-use pingora_prometheus::prometheus::{HistogramOpts, HistogramVec, IntCounterVec, Opts, register_histogram_vec, register_int_counter_vec};
+use pingora_prometheus::prometheus::{
+    HistogramOpts, HistogramVec, IntCounterVec, Opts, register_histogram_vec, register_int_counter_vec,
+};
 use std::sync::LazyLock;
 
 pub static REQUEST_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {

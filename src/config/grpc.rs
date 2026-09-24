@@ -1,9 +1,9 @@
 use serde::Deserialize;
 
 use crate::config::defs::Entity;
+use crate::config::defs::Listener;
 use crate::config::defs::SARAttributes;
 use crate::config::defs::Upstream;
-use crate::config::defs::Listener;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct RequestMatch {
