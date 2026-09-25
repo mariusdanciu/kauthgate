@@ -2,19 +2,16 @@ use crate::config::ProxyConfig;
 use crate::http::policy::check_rule;
 use crate::kube::auth::KubeAuthClient;
 use crate::utils::metrics::{REQUEST_DURATION, REQUEST_TOTAL};
-use crate::utils::proxy::AuthorizationInfo;
-use crate::utils::proxy::get_header;
-use crate::utils::proxy::parse_bearer_token;
-use crate::utils::proxy::run_authz;
+use crate::utils::proxy::{evaluate_request, get_header, inject_headers, parse_bearer_token};
 use async_trait::async_trait;
 use pingora::http::ResponseHeader;
 use pingora::prelude::*;
 use pingora::proxy::{ProxyHttp, Session};
-use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::time::Instant;
-use tracing::{error, info};
+use tracing::info;
 pub struct HttpProxy {
     client: KubeAuthClient,
     config: Arc<ProxyConfig>,
@@ -55,76 +52,42 @@ impl ProxyHttp for HttpProxy {
     async fn request_filter(&self, session: &mut Session, _ctx: &mut Self::CTX) -> Result<bool> {
         let path = session.req_header().uri.path();
         let method = session.req_header().method.as_str();
+        let bearer_token = parse_bearer_token(session);
+        let query_map: OnceLock<HashMap<&str, &str>> = OnceLock::new();
 
-        let query_map: OnceCell<HashMap<&str, &str>> = OnceCell::new();
-        match parse_bearer_token(session) {
-            Some(bearer_token) => {
-                let auth_info = self.client.authenticate(bearer_token).await;
+        let outcome = evaluate_request(
+            bearer_token,
+            &self.config.http.rules,
+            &self.config.http.no_auth_rules,
+            |matches| {
+                check_rule(
+                    matches,
+                    path,
+                    method,
+                    |header| get_header(session, header),
+                    |param| {
+                        query_map
+                            .get_or_init(|| parse_query(session.req_header().uri.query()))
+                            .get(param)
+                            .map(|v| v.to_string())
+                    },
+                )
+            },
+            &self.client,
+        )
+        .await;
 
-                match auth_info {
-                    Ok(auth_info) => {
-                        for rule in &self.config.http.rules {
-                            if let Some(vars) = check_rule(
-                                &rule.matches,
-                                path,
-                                method,
-                                |header| get_header(session, header),
-                                |param| {
-                                    query_map
-                                        .get_or_init(|| parse_query(session.req_header().uri.query()))
-                                        .get(param)
-                                        .map(|v| v.to_string())
-                                },
-                            ) {
-                                if let Err(e) = run_authz(
-                                    session,
-                                    &AuthorizationInfo {
-                                        sar_resource_attributes: &rule.sar,
-                                        vars: &vars,
-                                        client: &self.client,
-                                        auth_info: &auth_info,
-                                        config: &self.config,
-                                    },
-                                )
-                                .await
-                                {
-                                    return self.error_response(403, &e.to_string(), session).await;
-                                }
-                                info!("rule matched: {:?}", rule.name);
-                                return Ok(false);
-                            }
-                        }
-                    },
-                    Err(e) => {
-                        error!("authentication failed: {:?}", e);
-                        return self.error_response(401, &e.to_string(), session).await;
-                    },
+        match outcome {
+            Ok(allowed) => {
+                if let Some(auth_info) = &allowed.auth_info {
+                    inject_headers(session, &self.config, auth_info)
+                        .map_err(|e| Error::because(ErrorType::InternalError, "inject headers", e))?;
                 }
+                info!("rule matched: {:?}", allowed.rule_name);
+                Ok(false)
             },
-            None => {
-                for rule in &self.config.http.no_auth_rules {
-                    if check_rule(
-                        &rule.matches,
-                        path,
-                        method,
-                        |header| get_header(session, header),
-                        |param| {
-                            query_map
-                                .get_or_init(|| parse_query(session.req_header().uri.query()))
-                                .get(param)
-                                .map(|v| v.to_string())
-                        },
-                    )
-                    .is_some()
-                    {
-                        info!("rule matched: {:?}", rule.name);
-                        return Ok(false);
-                    }
-                }
-            },
+            Err(msg) => self.error_response(403, &msg, session).await,
         }
-
-        self.error_response(16, "no rule matched", session).await
     }
 
     async fn upstream_peer(&self, _session: &mut Session, _ctx: &mut Self::CTX) -> Result<Box<HttpPeer>> {

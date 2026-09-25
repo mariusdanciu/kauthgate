@@ -1,3 +1,4 @@
+use crate::auth::{AuthClient, AuthError, AuthInfo, RbacAttributes};
 use k8s_openapi::api::authentication::v1::{TokenReview, TokenReviewSpec};
 use k8s_openapi::api::authorization::v1::{ResourceAttributes, SubjectAccessReview, SubjectAccessReviewSpec};
 use kube::api::PostParams;
@@ -6,24 +7,7 @@ use moka::future::Cache;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
 use std::time::Duration;
-use thiserror::Error;
 use tracing::{debug, error, info, warn};
-
-#[derive(Error, Debug, Clone)]
-pub enum AuthError {
-    #[error("Unauthenticated")]
-    Unauthenticated,
-    #[error("Unauthorized")]
-    Unauthorized,
-    #[error("Internal auth error: {0}")]
-    Internal(String),
-}
-
-#[derive(Debug, Clone)]
-pub struct AuthInfo {
-    pub username: String,
-    pub groups: Vec<String>,
-}
 
 struct Inner {
     client: tokio::sync::OnceCell<Client>,
@@ -59,8 +43,11 @@ impl KubeAuthClient {
             })
             .await
     }
+}
 
-    pub async fn authenticate(&self, token: &str) -> Result<AuthInfo, AuthError> {
+#[async_trait::async_trait]
+impl AuthClient for KubeAuthClient {
+    async fn authenticate(&self, token: &str) -> Result<AuthInfo, AuthError> {
         let client = self.client().await?.clone();
         let token_owned = token.to_string();
         let audiences = self.inner.token_review_audiences.clone();
@@ -121,18 +108,17 @@ impl KubeAuthClient {
             .map_err(|e: Arc<AuthError>| e.as_ref().clone())?
     }
 
-    pub async fn authorize(
-        &self,
-        auth_info: &AuthInfo,
-        resource_attributes: &ResourceAttributes,
-    ) -> Result<(), AuthError> {
+    async fn authorize(&self, auth_info: &AuthInfo, resource_attributes: &RbacAttributes) -> Result<(), AuthError> {
         let mut hasher = DefaultHasher::new();
         auth_info.username.hash(&mut hasher);
         auth_info.groups.hash(&mut hasher);
         resource_attributes.namespace.hash(&mut hasher);
-        resource_attributes.group.hash(&mut hasher);
+        resource_attributes.api_group.hash(&mut hasher);
+        resource_attributes.api_version.hash(&mut hasher);
         resource_attributes.resource.hash(&mut hasher);
+        resource_attributes.sub_resource.hash(&mut hasher);
         resource_attributes.verb.hash(&mut hasher);
+
         let key = hasher.finish();
         let client = self.client().await?.clone();
         let username = auth_info.username.clone();
@@ -146,7 +132,15 @@ impl KubeAuthClient {
                     spec: SubjectAccessReviewSpec {
                         user: Some(username),
                         groups: Some(groups),
-                        resource_attributes: Some(resource_attributes.clone()),
+                        resource_attributes: Some(ResourceAttributes {
+                            group: resource_attributes.api_group.clone(),
+                            version: resource_attributes.api_version.clone(),
+                            resource: resource_attributes.resource.clone(),
+                            subresource: resource_attributes.sub_resource.clone(),
+                            namespace: resource_attributes.namespace.clone(),
+                            verb: resource_attributes.verb.clone(),
+                            ..Default::default()
+                        }),
                         ..Default::default()
                     },
                     ..Default::default()

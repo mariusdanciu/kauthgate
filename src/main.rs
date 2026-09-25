@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::info;
 
+mod auth;
 mod config;
 mod grpc;
 mod http;
