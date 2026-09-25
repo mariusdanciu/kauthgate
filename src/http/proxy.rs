@@ -65,7 +65,7 @@ impl ProxyHttp for HttpProxy {
                     Ok(auth_info) => {
                         for rule in &self.config.http.rules {
                             if let Some(vars) = check_rule(
-                                &rule.request,
+                                &rule.matches,
                                 path,
                                 method,
                                 |header| get_header(session, header),
@@ -104,7 +104,7 @@ impl ProxyHttp for HttpProxy {
             None => {
                 for rule in &self.config.http.no_auth_rules {
                     if check_rule(
-                        &rule.request,
+                        &rule.matches,
                         path,
                         method,
                         |header| get_header(session, header),

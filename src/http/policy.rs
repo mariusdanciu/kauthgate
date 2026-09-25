@@ -41,7 +41,7 @@ fn check_path(rule_path: &[Binding], request_path: &[&str]) -> Option<ConfigVari
 }
 
 pub(crate) fn check_rule(
-    request: &RequestMatch,
+    matches: &RequestMatch,
     path: &str,
     method: &str,
     get_header: impl Fn(&str) -> Option<String>,
@@ -51,7 +51,7 @@ pub(crate) fn check_rule(
 
     let parts: Vec<&str> = path_to_vec(path);
 
-    if let Some(rule_path) = &request.path {
+    if let Some(rule_path) = &matches.path {
         if let Some(p_vars) = check_path(rule_path, &parts) {
             variables.extend(p_vars);
         } else {
@@ -60,13 +60,13 @@ pub(crate) fn check_rule(
         }
     }
 
-    if let Some(methods) = &request.methods
+    if let Some(methods) = &matches.methods
         && !methods.iter().any(|m| m.eq_ignore_ascii_case(method))
     {
         return None;
     }
 
-    if let Some(headers) = &request.headers {
+    if let Some(headers) = &matches.headers {
         for header in headers {
             let value = get_header(header.name.as_str());
 
@@ -87,7 +87,7 @@ pub(crate) fn check_rule(
         }
     }
 
-    if let Some(query_params) = &request.query_params {
+    if let Some(query_params) = &matches.query_params {
         for query in query_params {
             let value = get_query(query.name.as_str());
 

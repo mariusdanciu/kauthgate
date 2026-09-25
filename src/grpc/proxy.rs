@@ -81,7 +81,7 @@ impl ProxyHttp for GrpcProxy {
                     Ok(auth_info) => {
                         for rule in &self.config.grpc.rules {
                             if let Some(vars) =
-                                check_rule(&rule.request, service, action, |header| get_header(session, header))
+                                check_rule(&rule.matches, service, action, |header| get_header(session, header))
                             {
                                 if let Err(e) = run_authz(
                                     session,
@@ -110,7 +110,7 @@ impl ProxyHttp for GrpcProxy {
             },
             None => {
                 for rule in &self.config.grpc.no_auth_rules {
-                    if check_rule(&rule.request, service, action, |header| get_header(session, header)).is_some() {
+                    if check_rule(&rule.matches, service, action, |header| get_header(session, header)).is_some() {
                         info!("rule matched: {:?}", rule.name);
                         return Ok(false);
                     }

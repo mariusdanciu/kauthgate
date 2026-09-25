@@ -16,7 +16,7 @@ grpc:
     port: 50052
   rules:
     - name: flight
-      request:
+      matches:
         service: arrow.flight.protocol.FlightService
         grpc-methods:
           - DoAction
@@ -42,7 +42,7 @@ http:
     port: 8081
   rules:
     - name: rest
-      request:
+      matches:
         path: /api/v1alpha1/data/connections
         headers:
           - name: "x-tenant-id"
@@ -57,7 +57,7 @@ http:
           verb: "create"
 
     - name: no-auth
-      request:
+      matches:
         path: /health
         headers:
           - name: "x-tenant-id"

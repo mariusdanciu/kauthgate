@@ -4,26 +4,26 @@ use crate::utils::ConfigVariables;
 use std::collections::HashMap;
 
 pub(crate) fn check_rule(
-    request: &RequestMatch,
+    matches: &RequestMatch,
     service: &str,
     grpc_method: &str,
     get_header: impl Fn(&str) -> Option<String>,
 ) -> Option<ConfigVariables> {
     let mut variables = HashMap::with_capacity(10);
 
-    if let Some(svc) = &request.service
+    if let Some(svc) = &matches.service
         && svc != service
     {
         return None;
     }
 
-    if let Some(methods) = &request.grpc_methods
+    if let Some(methods) = &matches.grpc_methods
         && !methods.iter().any(|m| m == grpc_method)
     {
         return None;
     }
 
-    if let Some(headers) = &request.headers {
+    if let Some(headers) = &matches.headers {
         for header in headers {
             let value = get_header(header.name.as_str());
 

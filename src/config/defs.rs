@@ -111,13 +111,13 @@ enum Access {
 #[derive(Debug, Clone)]
 pub struct NoAuthRule<R> {
     pub name: String,
-    pub request: R,
+    pub matches: R,
 }
 
 #[derive(Debug, Clone)]
 pub struct SarRule<R> {
     pub name: String,
-    pub request: R,
+    pub matches: R,
     pub sar: SarAttributes,
 }
 
@@ -134,7 +134,7 @@ pub struct ProtocolConfig<R> {
 #[derive(Deserialize)]
 struct RawRule<R> {
     name: String,
-    request: R,
+    matches: R,
     access: Access,
 }
 
@@ -153,12 +153,12 @@ impl<R> From<RawProtocolConfig<R>> for ProtocolConfig<R> {
             match raw_rule.access {
                 Access::Sar(sar) => rules.push(SarRule {
                     name: raw_rule.name,
-                    request: raw_rule.request,
+                    matches: raw_rule.matches,
                     sar: *sar,
                 }),
                 Access::NoAuth => no_auth_rules.push(NoAuthRule {
                     name: raw_rule.name,
-                    request: raw_rule.request,
+                    matches: raw_rule.matches,
                 }),
             }
         }
@@ -225,7 +225,7 @@ grpc:
     port: 50051
   rules:
     - name: flight
-      request:
+      matches:
         service: arrow.flight.protocol.FlightService
         grpc-methods:
           - DoAction
@@ -265,11 +265,11 @@ http:
         let rule = &cfg.grpc.rules[0];
         assert_eq!(rule.name, "flight");
         assert_eq!(
-            rule.request.service.as_deref(),
+            rule.matches.service.as_deref(),
             Some("arrow.flight.protocol.FlightService")
         );
-        assert_eq!(rule.request.grpc_methods, Some(vec!["DoAction".into(), "DoGet".into()]));
-        let headers = rule.request.headers.as_ref().unwrap();
+        assert_eq!(rule.matches.grpc_methods, Some(vec!["DoAction".into(), "DoGet".into()]));
+        let headers = rule.matches.headers.as_ref().unwrap();
         assert_eq!(headers.len(), 1);
         assert_eq!(headers[0].name, "x-tenant-id");
         assert_eq!(headers[0].value, Binding::Variable("tenant-id".into()));
@@ -322,7 +322,7 @@ grpc:
     port: 8080
   rules:
     - name: test
-      request:
+      matches:
         service: svc
         grpc-methods: []
         headers: []
