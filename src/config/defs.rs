@@ -27,7 +27,7 @@ impl Binding {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct SARAttributes {
+pub struct SarAttributes {
     #[serde(default, deserialize_with = "deserialize_optional_binding")]
     pub namespace: Option<Binding>,
     #[serde(rename = "api-group", default, deserialize_with = "deserialize_optional_binding")]
@@ -103,7 +103,7 @@ pub struct ProxyConfig {
 #[derive(Deserialize)]
 enum Access {
     #[serde(rename = "sar-resource-attributes")]
-    SAR(SARAttributes),
+    Sar(Box<SarAttributes>),
     #[serde(rename = "no-auth")]
     NoAuth,
 }
@@ -118,7 +118,7 @@ pub struct NoAuthRule<R> {
 pub struct SarRule<R> {
     pub name: String,
     pub request: R,
-    pub sar: SARAttributes,
+    pub sar: SarAttributes,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -151,10 +151,10 @@ impl<R> From<RawProtocolConfig<R>> for ProtocolConfig<R> {
         let mut no_auth_rules = Vec::new();
         for raw_rule in raw.rules {
             match raw_rule.access {
-                Access::SAR(sar) => rules.push(SarRule {
+                Access::Sar(sar) => rules.push(SarRule {
                     name: raw_rule.name,
                     request: raw_rule.request,
-                    sar,
+                    sar: *sar,
                 }),
                 Access::NoAuth => no_auth_rules.push(NoAuthRule {
                     name: raw_rule.name,
@@ -268,10 +268,7 @@ http:
             rule.request.service.as_deref(),
             Some("arrow.flight.protocol.FlightService")
         );
-        assert_eq!(
-            rule.request.grpc_methods,
-            Some(vec!["DoAction".into(), "DoGet".into()])
-        );
+        assert_eq!(rule.request.grpc_methods, Some(vec!["DoAction".into(), "DoGet".into()]));
         let headers = rule.request.headers.as_ref().unwrap();
         assert_eq!(headers.len(), 1);
         assert_eq!(headers[0].name, "x-tenant-id");

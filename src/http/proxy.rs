@@ -90,9 +90,8 @@ impl ProxyHttp for HttpProxy {
                                 {
                                     return self.error_response(403, &e.to_string(), session).await;
                                 }
+                                info!("rule matched: {:?}", rule.name);
                                 return Ok(false);
-                            } else {
-                                info!("rule does not match: {:?}", rule.name);
                             }
                         }
                     },
@@ -104,7 +103,7 @@ impl ProxyHttp for HttpProxy {
             },
             None => {
                 for rule in &self.config.http.no_auth_rules {
-                    if let Some(_) = check_rule(
+                    if check_rule(
                         &rule.request,
                         path,
                         method,
@@ -115,7 +114,10 @@ impl ProxyHttp for HttpProxy {
                                 .get(param)
                                 .map(|v| v.to_string())
                         },
-                    ) {
+                    )
+                    .is_some()
+                    {
+                        info!("rule matched: {:?}", rule.name);
                         return Ok(false);
                     }
                 }

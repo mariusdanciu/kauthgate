@@ -1,4 +1,4 @@
-use crate::config::{Binding, ProxyConfig, SARAttributes};
+use crate::config::{Binding, ProxyConfig, SarAttributes};
 use crate::kube::auth::AuthError;
 use crate::kube::auth::AuthInfo;
 use crate::kube::auth::KubeAuthClient;
@@ -8,7 +8,7 @@ use pingora::proxy::Session;
 use tracing::error;
 
 pub(crate) struct AuthorizationInfo<'a> {
-    pub sar_resource_attributes: &'a SARAttributes,
+    pub sar_resource_attributes: &'a SarAttributes,
     pub vars: &'a ConfigVariables,
     pub client: &'a KubeAuthClient,
     pub auth_info: &'a AuthInfo,
@@ -44,7 +44,7 @@ fn resolve(value: Option<&Binding>, variables: &ConfigVariables) -> Option<Strin
 }
 
 pub(crate) fn compile_resource_attributes(
-    resource_attributes: &SARAttributes,
+    resource_attributes: &SarAttributes,
     variables: &ConfigVariables,
 ) -> ResourceAttributes {
     let namespace = resolve(resource_attributes.namespace.as_ref(), variables);
