@@ -5,10 +5,16 @@ use config::{Config, File};
 use serde::{Deserialize, Deserializer};
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct Entity {
-    pub name: String,
-    #[serde(deserialize_with = "deserialize_binding")]
-    pub value: Binding,
+#[serde(untagged)]
+pub enum EntityMatch {
+    EqualsOrExtract {
+        name: String,
+        #[serde(deserialize_with = "deserialize_binding")]
+        value: Binding,
+    },
+    Exists {
+        name: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -271,8 +277,13 @@ http:
         assert_eq!(rule.matches.grpc_methods, Some(vec!["DoAction".into(), "DoGet".into()]));
         let headers = rule.matches.headers.as_ref().unwrap();
         assert_eq!(headers.len(), 1);
-        assert_eq!(headers[0].name, "x-tenant-id");
-        assert_eq!(headers[0].value, Binding::Variable("tenant-id".into()));
+        match &headers[0] {
+            EntityMatch::EqualsOrExtract { name, value } => {
+                assert_eq!(name, "x-tenant-id");
+                assert_eq!(*value, Binding::Variable("tenant-id".into()));
+            },
+            other => panic!("expected EqualsOrExtract, got {:?}", other),
+        }
         assert_eq!(rule.sar.namespace, Some(Binding::Variable("tenant-id".into())));
         assert_eq!(rule.sar.api_group, Some(Binding::Literal("example.io".into())));
         assert_eq!(rule.sar.resource, Some(Binding::Literal("widgets".into())));

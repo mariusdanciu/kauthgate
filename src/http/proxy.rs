@@ -1,5 +1,5 @@
 use crate::config::ProxyConfig;
-use crate::http::policy::check_rule;
+use crate::http::rule::check_rule;
 use crate::kube::auth::KubeAuthClient;
 use crate::utils::metrics::{REQUEST_DURATION, REQUEST_TOTAL};
 use crate::utils::proxy::{evaluate_request, get_header, inject_headers, parse_bearer_token};

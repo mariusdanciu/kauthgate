@@ -1,4 +1,4 @@
-use crate::config::defs::{Binding, Entity, ProtocolConfig};
+use crate::config::defs::{Binding, EntityMatch, ProtocolConfig};
 use serde::Deserialize;
 use serde::Deserializer;
 
@@ -30,9 +30,9 @@ pub struct RequestMatch {
     #[serde(default, deserialize_with = "deserialize_methods")]
     pub methods: Option<Vec<String>>,
     #[serde(default)]
-    pub headers: Option<Vec<Entity>>,
+    pub headers: Option<Vec<EntityMatch>>,
     #[serde(rename = "query-params", default)]
-    pub query_params: Option<Vec<Entity>>,
+    pub query_params: Option<Vec<EntityMatch>>,
 }
 
 pub type HttpConfig = ProtocolConfig<RequestMatch>;

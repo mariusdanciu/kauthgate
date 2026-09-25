@@ -1,6 +1,7 @@
 use crate::config::defs::Binding;
 use crate::config::http::RequestMatch;
 use crate::utils::ConfigVariables;
+use crate::utils::matchers::match_entity;
 use crate::utils::proxy::path_to_vec;
 use std::collections::HashMap;
 use tracing::info;
@@ -66,46 +67,14 @@ pub(crate) fn check_rule(
         return None;
     }
 
-    if let Some(headers) = &matches.headers {
-        for header in headers {
-            let value = get_header(header.name.as_str());
-
-            if let Some(value) = value {
-                match &header.value {
-                    Binding::Variable(var) => {
-                        variables.insert(var.to_string(), value);
-                    },
-                    Binding::Literal(literal) => {
-                        if value != *literal {
-                            return None;
-                        }
-                    },
-                }
-            } else {
-                return None;
-            }
-        }
+    match match_entity(&matches.headers, get_header) {
+        Some(vars) => variables.extend(vars),
+        None => return None,
     }
 
-    if let Some(query_params) = &matches.query_params {
-        for query in query_params {
-            let value = get_query(query.name.as_str());
-
-            if let Some(value) = value {
-                match &query.value {
-                    Binding::Variable(var) => {
-                        variables.insert(var.to_string(), value);
-                    },
-                    Binding::Literal(literal) => {
-                        if value != *literal {
-                            return None;
-                        }
-                    },
-                }
-            } else {
-                return None;
-            }
-        }
+    match match_entity(&matches.query_params, get_query) {
+        Some(vars) => variables.extend(vars),
+        None => return None,
     }
 
     variables.insert("path".into(), path.to_string());
@@ -116,7 +85,8 @@ pub(crate) fn check_rule(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::defs::{Binding, Entity};
+    use crate::config::defs::Binding;
+    use crate::config::defs::EntityMatch;
 
     fn path_bindings(parts: &[&str]) -> Vec<Binding> {
         parts.iter().map(|s| Binding::from_str(s)).collect()
@@ -132,8 +102,8 @@ mod tests {
     fn request(
         path: Option<&str>,
         methods: Option<&[&str]>,
-        headers: Option<Vec<Entity>>,
-        query_params: Option<Vec<Entity>>,
+        headers: Option<Vec<EntityMatch>>,
+        query_params: Option<Vec<EntityMatch>>,
     ) -> RequestMatch {
         RequestMatch {
             path: path.map(|p| path_bindings(&path_to_vec(p))),
@@ -143,15 +113,19 @@ mod tests {
         }
     }
 
-    fn var_entity(name: &str, var: &str) -> Entity {
-        Entity {
+    fn var_entity(name: &str, var: &str) -> EntityMatch {
+        EntityMatch::EqualsOrExtract {
             name: name.into(),
             value: Binding::Variable(var.into()),
         }
     }
 
-    fn literal_entity(name: &str, literal: &str) -> Entity {
-        Entity {
+    fn exists_entity(name: &str) -> EntityMatch {
+        EntityMatch::Exists { name: name.into() }
+    }
+
+    fn literal_entity(name: &str, literal: &str) -> EntityMatch {
+        EntityMatch::EqualsOrExtract {
             name: name.into(),
             value: Binding::Literal(literal.into()),
         }
@@ -355,6 +329,109 @@ mod tests {
             if q == "format" { Some("xml".into()) } else { None }
         });
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn exists_header_matches_when_present() {
+        let r = request(
+            Some("/api"),
+            Some(&["GET"]),
+            Some(vec![exists_entity("x-trace-id")]),
+            None,
+        );
+        let result = check_rule(
+            &r,
+            "/api",
+            "GET",
+            |h| if h == "x-trace-id" { Some("abc".into()) } else { None },
+            no_query,
+        );
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn exists_header_rejects_when_missing() {
+        let r = request(
+            Some("/api"),
+            Some(&["GET"]),
+            Some(vec![exists_entity("x-trace-id")]),
+            None,
+        );
+        assert!(check_rule(&r, "/api", "GET", no_header, no_query).is_none());
+    }
+
+    #[test]
+    fn exists_header_does_not_extract_variable() {
+        let r = request(
+            Some("/api"),
+            Some(&["GET"]),
+            Some(vec![exists_entity("x-trace-id")]),
+            None,
+        );
+        let vars = check_rule(
+            &r,
+            "/api",
+            "GET",
+            |h| if h == "x-trace-id" { Some("abc".into()) } else { None },
+            no_query,
+        )
+        .unwrap();
+        assert!(!vars.contains_key("x-trace-id"));
+    }
+
+    #[test]
+    fn exists_query_param_matches_when_present() {
+        let r = request(Some("/search"), Some(&["GET"]), None, Some(vec![exists_entity("page")]));
+        let result = check_rule(&r, "/search", "GET", no_header, |q| {
+            if q == "page" { Some("1".into()) } else { None }
+        });
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn exists_query_param_rejects_when_missing() {
+        let r = request(Some("/search"), Some(&["GET"]), None, Some(vec![exists_entity("page")]));
+        assert!(check_rule(&r, "/search", "GET", no_header, no_query).is_none());
+    }
+
+    #[test]
+    fn exists_query_param_does_not_extract_variable() {
+        let r = request(Some("/search"), Some(&["GET"]), None, Some(vec![exists_entity("page")]));
+        let vars = check_rule(&r, "/search", "GET", no_header, |q| {
+            if q == "page" { Some("3".into()) } else { None }
+        })
+        .unwrap();
+        assert!(!vars.contains_key("page"));
+    }
+
+    #[test]
+    fn exists_combined_with_extract_header_and_query() {
+        let r = request(
+            Some("/api"),
+            Some(&["GET"]),
+            Some(vec![exists_entity("x-trace-id"), var_entity("x-tenant-id", "tenant")]),
+            Some(vec![exists_entity("debug"), var_entity("q", "query")]),
+        );
+        let vars = check_rule(
+            &r,
+            "/api",
+            "GET",
+            |h| match h {
+                "x-trace-id" => Some("tr-1".into()),
+                "x-tenant-id" => Some("acme".into()),
+                _ => None,
+            },
+            |q| match q {
+                "debug" => Some("true".into()),
+                "q" => Some("rust".into()),
+                _ => None,
+            },
+        )
+        .unwrap();
+        assert_eq!(vars.get("tenant").unwrap(), "acme");
+        assert_eq!(vars.get("query").unwrap(), "rust");
+        assert!(!vars.contains_key("x-trace-id"));
+        assert!(!vars.contains_key("debug"));
     }
 
     #[test]

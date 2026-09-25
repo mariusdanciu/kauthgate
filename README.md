@@ -47,6 +47,7 @@ grpc:
         headers:
           - name: "x-tenant-id"
             value: "{tenant-id}"
+          - name: "x-request-id"          # exists check — any value
       access:
         sar-resource-attributes:
           namespace: "{tenant-id}"
@@ -70,6 +71,7 @@ http:
         headers:
           - name: "x-tenant-id"
             value: "{tenant-id}"
+          - name: "x-request-id"          # exists check — any value
       access:
         sar-resource-attributes:
           namespace: "{tenant-id}"
@@ -104,9 +106,32 @@ When the optional `prometheus` section is present, the gateway exposes a `/` end
 | `rbac_gate_requests_total` | counter | `protocol`, `status` | Total requests processed |
 | `rbac_gate_request_duration_seconds` | histogram | `protocol`, `status` | Request duration in seconds |
 
+### Header and query parameter matching
+
+Headers and query parameters support two matching modes depending on whether a `value` field is provided:
+
+**With `value`** — requires the field to be present and either captures or matches its value:
+
+```yaml
+headers:
+  - name: "x-tenant-id"
+    value: "{tenant-id}"    # variable: captures header value into `tenant-id`
+  - name: "x-version"
+    value: "v2"             # literal: requires exact match, no capture
+```
+
+**Without `value` (exists check)** — requires the field to be present, regardless of its value. No variable is extracted:
+
+```yaml
+headers:
+  - name: "x-request-id"   # passes if header exists with any value
+```
+
+Both modes can be mixed in the same rule. If any required header or query parameter is missing, the rule does not match.
+
 ### Variable extraction
 
-Variables are extracted from request data and can be interpolated into SAR resource attributes using `{variable-name}` syntax. A header or query-param entry with a variable value (e.g. `"{tenant-id}"`) both requires the field to be present and captures its value into the named variable. A literal value (e.g. `"v2"`) requires an exact match without capturing.
+Variables are extracted from request data and can be interpolated into SAR resource attributes using `{variable-name}` syntax.
 
 **gRPC extractors** — variables can be extracted from:
 - **Headers** — `name` specifies the header, `value: "{var}"` captures its value
@@ -128,7 +153,7 @@ All request match fields are optional. When omitted, the field is not checked (a
 |-------|-------------|
 | `service` | gRPC service name (e.g. `arrow.flight.protocol.FlightService`) |
 | `grpc-methods` | List of allowed gRPC methods (e.g. `DoGet`, `DoAction`) |
-| `headers` | Required headers with variable or literal values |
+| `headers` | Required headers — each entry can use `value` for equals/extract or omit it for an exists check |
 
 **HTTP request fields:**
 
@@ -136,8 +161,8 @@ All request match fields are optional. When omitted, the field is not checked (a
 |-------|-------------|
 | `path` | URL path pattern, supports `{var}` extraction, `*` (single segment wildcard), `**` (globstar) |
 | `methods` | List of allowed HTTP methods (lowercased during parsing) |
-| `headers` | Required headers with variable or literal values |
-| `query-params` | Required query parameters with variable or literal values |
+| `headers` | Required headers — each entry can use `value` for equals/extract or omit it for an exists check |
+| `query-params` | Required query parameters — each entry can use `value` for equals/extract or omit it for an exists check |
 
 ### Access control
 

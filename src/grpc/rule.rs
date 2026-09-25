@@ -1,6 +1,6 @@
-use crate::config::defs::Binding;
 use crate::config::grpc::RequestMatch;
 use crate::utils::ConfigVariables;
+use crate::utils::matchers::match_entity;
 use std::collections::HashMap;
 
 pub(crate) fn check_rule(
@@ -23,26 +23,11 @@ pub(crate) fn check_rule(
         return None;
     }
 
-    if let Some(headers) = &matches.headers {
-        for header in headers {
-            let value = get_header(header.name.as_str());
-
-            if let Some(value) = value {
-                match &header.value {
-                    Binding::Variable(var) => {
-                        variables.insert(var.to_string(), value);
-                    },
-                    Binding::Literal(literal) => {
-                        if value != *literal {
-                            return None;
-                        }
-                    },
-                }
-            } else {
-                return None;
-            }
-        }
+    match match_entity(&matches.headers, get_header) {
+        Some(vars) => variables.extend(vars),
+        None => return None,
     }
+
     variables.insert("service".into(), service.to_string());
     variables.insert("grpc_method".into(), grpc_method.to_string());
     Some(variables)
@@ -51,9 +36,10 @@ pub(crate) fn check_rule(
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::config::defs::{Binding, Entity};
+    use crate::config::defs::Binding;
+    use crate::config::defs::EntityMatch;
 
-    fn request(service: &str, actions: &[&str], headers: Vec<Entity>) -> RequestMatch {
+    fn request(service: &str, actions: &[&str], headers: Vec<EntityMatch>) -> RequestMatch {
         RequestMatch {
             service: Some(service.into()),
             grpc_methods: Some(actions.iter().map(|s| s.to_string()).collect()),
@@ -61,18 +47,22 @@ pub mod tests {
         }
     }
 
-    fn var_header(name: &str, var: &str) -> Entity {
-        Entity {
+    fn var_header(name: &str, var: &str) -> EntityMatch {
+        EntityMatch::EqualsOrExtract {
             name: name.into(),
             value: Binding::Variable(var.into()),
         }
     }
 
-    fn literal_header(name: &str, literal: &str) -> Entity {
-        Entity {
+    fn literal_header(name: &str, literal: &str) -> EntityMatch {
+        EntityMatch::EqualsOrExtract {
             name: name.into(),
             value: Binding::Literal(literal.into()),
         }
+    }
+
+    fn exists_header(name: &str) -> EntityMatch {
+        EntityMatch::Exists { name: name.into() }
     }
 
     fn no_header(_: &str) -> Option<String> {
@@ -171,6 +161,50 @@ pub mod tests {
             headers: None,
         };
         assert!(check_rule(&r, "any.Service", "AnyMethod", no_header).is_some());
+    }
+
+    #[test]
+    fn exists_header_matches_when_present() {
+        let r = request("my.Service", &["GetItem"], vec![exists_header("x-trace-id")]);
+        let get = |h: &str| match h {
+            "x-trace-id" => Some("abc-123".into()),
+            _ => None,
+        };
+        assert!(check_rule(&r, "my.Service", "GetItem", get).is_some());
+    }
+
+    #[test]
+    fn exists_header_rejects_when_missing() {
+        let r = request("my.Service", &["GetItem"], vec![exists_header("x-trace-id")]);
+        assert!(check_rule(&r, "my.Service", "GetItem", no_header).is_none());
+    }
+
+    #[test]
+    fn exists_header_does_not_extract_variable() {
+        let r = request("my.Service", &["GetItem"], vec![exists_header("x-trace-id")]);
+        let get = |h: &str| match h {
+            "x-trace-id" => Some("abc-123".into()),
+            _ => None,
+        };
+        let vars = check_rule(&r, "my.Service", "GetItem", get).unwrap();
+        assert!(!vars.contains_key("x-trace-id"));
+    }
+
+    #[test]
+    fn exists_header_combined_with_extract() {
+        let r = request(
+            "my.Service",
+            &["GetItem"],
+            vec![exists_header("x-trace-id"), var_header("x-tenant-id", "tenant")],
+        );
+        let get = |h: &str| match h {
+            "x-trace-id" => Some("abc-123".into()),
+            "x-tenant-id" => Some("acme".into()),
+            _ => None,
+        };
+        let vars = check_rule(&r, "my.Service", "GetItem", get).unwrap();
+        assert_eq!(vars.get("tenant").unwrap(), "acme");
+        assert!(!vars.contains_key("x-trace-id"));
     }
 
     #[test]
