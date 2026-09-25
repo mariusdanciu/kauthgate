@@ -56,16 +56,56 @@ impl ProxyHttp for HttpProxy {
         let path = session.req_header().uri.path();
         let method = session.req_header().method.as_str();
 
-        let bearer_token = parse_bearer_token(session);
+        let query_map: OnceCell<HashMap<&str, &str>> = OnceCell::new();
+        match parse_bearer_token(session) {
+            Some(bearer_token) => {
+                let auth_info = self.client.authenticate(bearer_token).await;
 
-        let auth_info = self.client.authenticate(bearer_token).await;
-
-        match auth_info {
-            Ok(auth_info) => {
-                let query_map: OnceCell<HashMap<&str, &str>> = OnceCell::new();
-                for rule in &self.config.http.rules {
-                    if let Some(vars) = check_rule(
-                        rule,
+                match auth_info {
+                    Ok(auth_info) => {
+                        for rule in &self.config.http.rules {
+                            if let Some(vars) = check_rule(
+                                &rule.request,
+                                path,
+                                method,
+                                |header| get_header(session, header),
+                                |param| {
+                                    query_map
+                                        .get_or_init(|| parse_query(session.req_header().uri.query()))
+                                        .get(param)
+                                        .map(|v| v.to_string())
+                                },
+                            ) {
+                                if let Err(e) = run_authz(
+                                    session,
+                                    &AuthorizationInfo {
+                                        sar_resource_attributes: &rule.sar,
+                                        vars: &vars,
+                                        client: &self.client,
+                                        auth_info: &auth_info,
+                                        config: &self.config,
+                                    },
+                                )
+                                .await
+                                {
+                                    return self.error_response(403, &e.to_string(), session).await;
+                                }
+                                return Ok(false);
+                            } else {
+                                info!("rule does not match: {:?}", rule.name);
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        error!("authentication failed: {:?}", e);
+                        return self.error_response(401, &e.to_string(), session).await;
+                    },
+                }
+            },
+            None => {
+                for rule in &self.config.http.no_auth_rules {
+                    if let Some(_) = check_rule(
+                        &rule.request,
                         path,
                         method,
                         |header| get_header(session, header),
@@ -76,34 +116,13 @@ impl ProxyHttp for HttpProxy {
                                 .map(|v| v.to_string())
                         },
                     ) {
-                        if let Err(e) = run_authz(
-                            session,
-                            &AuthorizationInfo {
-                                sar_resource_attributes: &rule.sar_resource_attributes,
-                                vars: &vars,
-                                client: &self.client,
-                                auth_info: &auth_info,
-                                config: &self.config,
-                            },
-                        )
-                        .await
-                        {
-                            return self.error_response(403, &e.to_string(), session).await;
-                        }
-
                         return Ok(false);
-                    } else {
-                        info!("policy does not match: {:?}", rule.name);
                     }
                 }
-
-                return self.error_response(403, "no policy matched", session).await;
-            },
-            Err(e) => {
-                error!("authentication failed: {:?}", e);
-                return self.error_response(401, &e.to_string(), session).await;
             },
         }
+
+        self.error_response(16, "no rule matched", session).await
     }
 
     async fn upstream_peer(&self, _session: &mut Session, _ctx: &mut Self::CTX) -> Result<Box<HttpPeer>> {

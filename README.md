@@ -6,7 +6,7 @@ An authentication and authorization gateway built on [Pingora](https://github.co
 
 1. A client sends a request with a `Bearer` token in the `authorization` header.
 2. **Authentication** — the gateway validates the token via the Kubernetes TokenReview API.
-3. **Policy matching** — the request is matched against configured rules based on service/method (gRPC) or path/method/headers/query-params (HTTP).
+3. **Rule matching** — the request is matched against configured rules based on service/method (gRPC) or path/method/headers/query-params (HTTP).
 4. **Variable extraction** — values from headers, path segments, and query strings are extracted into named variables using `{variable-name}` syntax.
 5. **Authorization** — a Kubernetes SubjectAccessReview is issued with the resolved resource attributes (namespace, apiGroup, resource, verb).
 6. **Header injection** — on success, the authenticated user's identity is injected into the request via configurable headers (`user-header` and `groups-header`) before proxying upstream. Any client-supplied values for these headers are overwritten.
@@ -47,11 +47,12 @@ grpc:
         headers:
           - name: "x-tenant-id"
             value: "{tenant-id}"
-      sar-resource-attributes:
-        namespace: "{tenant-id}"
-        api-group: dataconnecthub.opendatahub.io
-        resource: data-store
-        verb: "get"
+      access:
+        sar-resource-attributes:
+          namespace: "{tenant-id}"
+          api-group: example.io
+          resource: widgets
+          verb: "get"
 
 http:
   listener:
@@ -61,19 +62,27 @@ http:
     host: 127.0.0.1
     port: 8081
   rules:
-    - name: rest
+    - name: rest-api
       request:
-        path: /api/v1alpha1/data/connections
+        path: /api/v1/tenants/{tenant-id}/items
         methods:
           - post
         headers:
           - name: "x-tenant-id"
             value: "{tenant-id}"
-      sar-resource-attributes:
-        namespace: "{tenant-id}"
-        api-group: dataconnecthub.opendatahub.io
-        resource: data-connections
-        verb: "create"
+      access:
+        sar-resource-attributes:
+          namespace: "{tenant-id}"
+          api-group: example.io
+          resource: items
+          verb: "create"
+
+    - name: health
+      request:
+        path: /health
+        methods:
+          - get
+      access: no-auth
 ```
 
 ### Auth settings
@@ -130,17 +139,28 @@ All request match fields are optional. When omitted, the field is not checked (a
 | `headers` | Required headers with variable or literal values |
 | `query-params` | Required query parameters with variable or literal values |
 
-### SAR resource attributes
+### Access control
 
-Each rule specifies `sar-resource-attributes` for the SubjectAccessReview. Fields support `{variable}` interpolation from extracted values:
+Each rule specifies an `access` field that determines how the request is authorized. There are two modes:
+
+**`sar-resource-attributes`** — requires a valid bearer token and issues a Kubernetes SubjectAccessReview with the given resource attributes. Fields support `{variable}` interpolation from extracted values:
 
 ```yaml
-sar-resource-attributes:
-  namespace: "{tenant-id}"    # resolved from extracted variable
-  api-group: example.io       # literal value
-  resource: widgets
-  verb: "get"
+access:
+  sar-resource-attributes:
+    namespace: "{tenant-id}"    # resolved from extracted variable
+    api-group: example.io       # literal value
+    resource: widgets
+    verb: "get"
 ```
+
+**`no-auth`** — allows the request through without any authentication or authorization. Useful for health checks or public endpoints:
+
+```yaml
+access: no-auth
+```
+
+Rules with `no-auth` are checked when no bearer token is present. Rules with `sar-resource-attributes` are only checked when a valid bearer token is provided.
 
 ## Usage
 
@@ -220,10 +240,10 @@ Users/ServiceAccounts that should be authorized need a Role granting access to t
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: dch-ingest
+  name: widget-access
   namespace: my-namespace
 rules:
-  - apiGroups: ["dataconnecthub.opendatahub.io"]
-    resources: ["data-connections"]
+  - apiGroups: ["example.io"]
+    resources: ["widgets", "items"]
     verbs: ["get", "create"]
 ```

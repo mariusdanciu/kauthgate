@@ -1,5 +1,5 @@
 use crate::config::defs::Binding;
-use crate::config::http::Rule;
+use crate::config::http::RequestMatch;
 use crate::utils::ConfigVariables;
 use crate::utils::proxy::path_to_vec;
 use std::collections::HashMap;
@@ -41,7 +41,7 @@ fn check_path(rule_path: &[Binding], request_path: &[&str]) -> Option<ConfigVari
 }
 
 pub(crate) fn check_rule(
-    policy: &Rule,
+    request: &RequestMatch,
     path: &str,
     method: &str,
     get_header: impl Fn(&str) -> Option<String>,
@@ -51,7 +51,7 @@ pub(crate) fn check_rule(
 
     let parts: Vec<&str> = path_to_vec(path);
 
-    if let Some(rule_path) = &policy.request.path {
+    if let Some(rule_path) = &request.path {
         if let Some(p_vars) = check_path(rule_path, &parts) {
             variables.extend(p_vars);
         } else {
@@ -60,13 +60,13 @@ pub(crate) fn check_rule(
         }
     }
 
-    if let Some(methods) = &policy.request.methods
+    if let Some(methods) = &request.methods
         && !methods.iter().any(|m| m.eq_ignore_ascii_case(method))
     {
         return None;
     }
 
-    if let Some(headers) = &policy.request.headers {
+    if let Some(headers) = &request.headers {
         for header in headers {
             let value = get_header(header.name.as_str());
 
@@ -87,7 +87,7 @@ pub(crate) fn check_rule(
         }
     }
 
-    if let Some(query_params) = &policy.request.query_params {
+    if let Some(query_params) = &request.query_params {
         for query in query_params {
             let value = get_query(query.name.as_str());
 
@@ -116,8 +116,7 @@ pub(crate) fn check_rule(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::defs::{Binding, Entity, SARAttributes};
-    use crate::config::http::{RequestMatch, Rule};
+    use crate::config::defs::{Binding, Entity};
 
     fn path_bindings(parts: &[&str]) -> Vec<Binding> {
         parts.iter().map(|s| Binding::from_str(s)).collect()
@@ -130,28 +129,17 @@ mod tests {
         None
     }
 
-    fn rule(
+    fn request(
         path: Option<&str>,
         methods: Option<&[&str]>,
         headers: Option<Vec<Entity>>,
         query_params: Option<Vec<Entity>>,
-    ) -> Rule {
-        Rule {
-            name: "test".into(),
-            request: RequestMatch {
-                path: path.map(|p| path_bindings(&path_to_vec(p))),
-                methods: methods.map(|m| m.iter().map(|s| s.to_string()).collect()),
-                headers,
-                query_params,
-            },
-            sar_resource_attributes: SARAttributes {
-                namespace: Some(Binding::Literal("ns".into())),
-                api_group: Some(Binding::Literal("g".into())),
-                api_version: None,
-                resource: Some(Binding::Literal("r".into())),
-                sub_resource: None,
-                verb: Some(Binding::Literal("v".into())),
-            },
+    ) -> RequestMatch {
+        RequestMatch {
+            path: path.map(|p| path_bindings(&path_to_vec(p))),
+            methods: methods.map(|m| m.iter().map(|s| s.to_string()).collect()),
+            headers,
+            query_params,
         }
     }
 
@@ -232,73 +220,62 @@ mod tests {
 
     #[test]
     fn rule_matches_path_and_method() {
-        let m = rule(Some("/api/v1/users"), Some(&["GET"]), None, None);
-        let result = check_rule(&m, "/api/v1/users", "GET", no_header, no_query);
+        let r = request(Some("/api/v1/users"), Some(&["GET"]), None, None);
+        let result = check_rule(&r, "/api/v1/users", "GET", no_header, no_query);
         assert!(result.is_some());
     }
 
     #[test]
     fn rule_rejects_wrong_method() {
-        let m = rule(Some("/api/v1/users"), Some(&["GET"]), None, None);
-        let result = check_rule(&m, "/api/v1/users", "POST", no_header, no_query);
+        let r = request(Some("/api/v1/users"), Some(&["GET"]), None, None);
+        let result = check_rule(&r, "/api/v1/users", "POST", no_header, no_query);
         assert!(result.is_none());
     }
 
     #[test]
     fn rule_rejects_wrong_path() {
-        let m = rule(Some("/api/v1/users"), Some(&["GET"]), None, None);
-        let result = check_rule(&m, "/api/v2/items", "GET", no_header, no_query);
+        let r = request(Some("/api/v1/users"), Some(&["GET"]), None, None);
+        let result = check_rule(&r, "/api/v2/items", "GET", no_header, no_query);
         assert!(result.is_none());
     }
 
     #[test]
     fn rule_no_methods_accepts_any() {
-        let m = rule(Some("/api"), None, None, None);
-        let result = check_rule(&m, "/api", "DELETE", no_header, no_query);
+        let r = request(Some("/api"), None, None, None);
+        let result = check_rule(&r, "/api", "DELETE", no_header, no_query);
         assert!(result.is_some());
     }
 
     #[test]
     fn rule_no_path_accepts_any() {
-        let m = rule(None, Some(&["GET"]), None, None);
-        let result = check_rule(&m, "/anything/here", "GET", no_header, no_query);
+        let r = request(None, Some(&["GET"]), None, None);
+        let result = check_rule(&r, "/anything/here", "GET", no_header, no_query);
         assert!(result.is_some());
     }
 
     #[test]
     fn rule_extracts_path_variables() {
-        let m = Rule {
-            name: "test".into(),
-            request: RequestMatch {
-                path: Some(path_bindings(&["tenants", "{tid}", "resources"])),
-                methods: None,
-                headers: None,
-                query_params: None,
-            },
-            sar_resource_attributes: SARAttributes {
-                namespace: Some(Binding::Variable("tid".into())),
-                api_group: Some(Binding::Literal("g".into())),
-                api_version: None,
-                resource: Some(Binding::Literal("r".into())),
-                sub_resource: None,
-                verb: Some(Binding::Literal("v".into())),
-            },
+        let r = RequestMatch {
+            path: Some(path_bindings(&["tenants", "{tid}", "resources"])),
+            methods: None,
+            headers: None,
+            query_params: None,
         };
-        let vars = check_rule(&m, "/tenants/acme/resources", "GET", no_header, no_query).unwrap();
+        let vars = check_rule(&r, "/tenants/acme/resources", "GET", no_header, no_query).unwrap();
         assert_eq!(vars.get("tid").unwrap(), "acme");
     }
 
     #[test]
     fn rule_requires_header_present() {
-        let m = rule(
+        let r = request(
             Some("/api"),
             Some(&["GET"]),
             Some(vec![var_entity("x-token", "tok")]),
             None,
         );
-        assert!(check_rule(&m, "/api", "GET", no_header, no_query).is_none());
+        assert!(check_rule(&r, "/api", "GET", no_header, no_query).is_none());
         let result = check_rule(
-            &m,
+            &r,
             "/api",
             "GET",
             |h| {
@@ -312,14 +289,14 @@ mod tests {
 
     #[test]
     fn rule_literal_header_rejects_wrong_value() {
-        let m = rule(
+        let r = request(
             Some("/api"),
             Some(&["GET"]),
             Some(vec![literal_entity("x-version", "v2")]),
             None,
         );
         let result = check_rule(
-            &m,
+            &r,
             "/api",
             "GET",
             |h| {
@@ -332,14 +309,14 @@ mod tests {
 
     #[test]
     fn rule_literal_header_accepts_matching_value() {
-        let m = rule(
+        let r = request(
             Some("/api"),
             Some(&["GET"]),
             Some(vec![literal_entity("x-version", "v2")]),
             None,
         );
         let result = check_rule(
-            &m,
+            &r,
             "/api",
             "GET",
             |h| {
@@ -352,14 +329,14 @@ mod tests {
 
     #[test]
     fn rule_requires_query_param() {
-        let m = rule(
+        let r = request(
             Some("/search"),
             Some(&["GET"]),
             None,
             Some(vec![var_entity("q", "query")]),
         );
-        assert!(check_rule(&m, "/search", "GET", no_header, no_query).is_none());
-        let result = check_rule(&m, "/search", "GET", no_header, |q| {
+        assert!(check_rule(&r, "/search", "GET", no_header, no_query).is_none());
+        let result = check_rule(&r, "/search", "GET", no_header, |q| {
             if q == "q" { Some("rust".into()) } else { None }
         });
         assert!(result.is_some());
@@ -368,13 +345,13 @@ mod tests {
 
     #[test]
     fn rule_literal_query_rejects_wrong_value() {
-        let m = rule(
+        let r = request(
             Some("/api"),
             Some(&["GET"]),
             None,
             Some(vec![literal_entity("format", "json")]),
         );
-        let result = check_rule(&m, "/api", "GET", no_header, |q| {
+        let result = check_rule(&r, "/api", "GET", no_header, |q| {
             if q == "format" { Some("xml".into()) } else { None }
         });
         assert!(result.is_none());
@@ -382,40 +359,29 @@ mod tests {
 
     #[test]
     fn rule_injects_path_and_method() {
-        let m = rule(Some("/api"), Some(&["POST"]), None, None);
-        let vars = check_rule(&m, "/api", "POST", no_header, no_query).unwrap();
+        let r = request(Some("/api"), Some(&["POST"]), None, None);
+        let vars = check_rule(&r, "/api", "POST", no_header, no_query).unwrap();
         assert_eq!(vars.get("path").unwrap(), "/api");
         assert_eq!(vars.get("method").unwrap(), "POST");
     }
 
     #[test]
     fn rule_all_conditions_none_matches_everything() {
-        let m = rule(None, None, None, None);
-        let result = check_rule(&m, "/any/path", "PATCH", no_header, no_query);
+        let r = request(None, None, None, None);
+        let result = check_rule(&r, "/any/path", "PATCH", no_header, no_query);
         assert!(result.is_some());
     }
 
     #[test]
     fn rule_combines_path_and_header_variables() {
-        let m = Rule {
-            name: "test".into(),
-            request: RequestMatch {
-                path: Some(path_bindings(&["tenants", "{tid}", "data"])),
-                methods: Some(vec!["POST".into()]),
-                headers: Some(vec![var_entity("x-request-id", "rid")]),
-                query_params: None,
-            },
-            sar_resource_attributes: SARAttributes {
-                namespace: Some(Binding::Variable("tid".into())),
-                api_group: Some(Binding::Literal("g".into())),
-                api_version: None,
-                resource: Some(Binding::Literal("r".into())),
-                sub_resource: None,
-                verb: Some(Binding::Literal("v".into())),
-            },
+        let r = RequestMatch {
+            path: Some(path_bindings(&["tenants", "{tid}", "data"])),
+            methods: Some(vec!["POST".into()]),
+            headers: Some(vec![var_entity("x-request-id", "rid")]),
+            query_params: None,
         };
         let vars = check_rule(
-            &m,
+            &r,
             "/tenants/acme/data",
             "POST",
             |h| {

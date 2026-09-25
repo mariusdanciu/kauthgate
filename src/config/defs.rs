@@ -100,6 +100,77 @@ pub struct ProxyConfig {
     pub http: HttpConfig,
 }
 
+#[derive(Deserialize)]
+enum Access {
+    #[serde(rename = "sar-resource-attributes")]
+    SAR(SARAttributes),
+    #[serde(rename = "no-auth")]
+    NoAuth,
+}
+
+#[derive(Debug, Clone)]
+pub struct NoAuthRule<R> {
+    pub name: String,
+    pub request: R,
+}
+
+#[derive(Debug, Clone)]
+pub struct SarRule<R> {
+    pub name: String,
+    pub request: R,
+    pub sar: SARAttributes,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(from = "RawProtocolConfig<R>")]
+#[serde(bound(deserialize = "R: Deserialize<'de>"))]
+pub struct ProtocolConfig<R> {
+    pub listener: Listener,
+    pub upstream: Upstream,
+    pub rules: Vec<SarRule<R>>,
+    pub no_auth_rules: Vec<NoAuthRule<R>>,
+}
+
+#[derive(Deserialize)]
+struct RawRule<R> {
+    name: String,
+    request: R,
+    access: Access,
+}
+
+#[derive(Deserialize)]
+struct RawProtocolConfig<R> {
+    listener: Listener,
+    upstream: Upstream,
+    rules: Vec<RawRule<R>>,
+}
+
+impl<R> From<RawProtocolConfig<R>> for ProtocolConfig<R> {
+    fn from(raw: RawProtocolConfig<R>) -> Self {
+        let mut rules = Vec::new();
+        let mut no_auth_rules = Vec::new();
+        for raw_rule in raw.rules {
+            match raw_rule.access {
+                Access::SAR(sar) => rules.push(SarRule {
+                    name: raw_rule.name,
+                    request: raw_rule.request,
+                    sar,
+                }),
+                Access::NoAuth => no_auth_rules.push(NoAuthRule {
+                    name: raw_rule.name,
+                    request: raw_rule.request,
+                }),
+            }
+        }
+        ProtocolConfig {
+            listener: raw.listener,
+            upstream: raw.upstream,
+            rules,
+            no_auth_rules,
+        }
+    }
+}
+
 pub fn load_config(config_file: String, secret_config_file: String) -> Result<ProxyConfig> {
     let config = Config::builder()
         .add_source(File::with_name(config_file.as_str()))
@@ -162,11 +233,12 @@ grpc:
         headers:
           - name: x-tenant-id
             value: "{tenant-id}"
-      sar-resource-attributes:
-        namespace: "{tenant-id}"
-        api-group: example.io
-        resource: widgets
-        verb: get
+      access:
+        sar-resource-attributes:
+          namespace: "{tenant-id}"
+          api-group: example.io
+          resource: widgets
+          verb: get
 
 http:
   listener:
@@ -188,38 +260,26 @@ http:
     }
 
     #[test]
-    fn deserializes_auth_policy() {
+    fn deserializes_auth_rule() {
         let cfg = parse_yaml(FULL_CONFIG);
-        let policy = &cfg.grpc.rules[0];
-        assert_eq!(policy.name, "flight");
+        let rule = &cfg.grpc.rules[0];
+        assert_eq!(rule.name, "flight");
         assert_eq!(
-            policy.request.service.as_deref(),
+            rule.request.service.as_deref(),
             Some("arrow.flight.protocol.FlightService")
         );
         assert_eq!(
-            policy.request.grpc_methods,
+            rule.request.grpc_methods,
             Some(vec!["DoAction".into(), "DoGet".into()])
         );
-        let headers = policy.request.headers.as_ref().unwrap();
+        let headers = rule.request.headers.as_ref().unwrap();
         assert_eq!(headers.len(), 1);
         assert_eq!(headers[0].name, "x-tenant-id");
         assert_eq!(headers[0].value, Binding::Variable("tenant-id".into()));
-        assert_eq!(
-            policy.sar_resource_attributes.namespace,
-            Some(Binding::Variable("tenant-id".into()))
-        );
-        assert_eq!(
-            policy.sar_resource_attributes.api_group,
-            Some(Binding::Literal("example.io".into()))
-        );
-        assert_eq!(
-            policy.sar_resource_attributes.resource,
-            Some(Binding::Literal("widgets".into()))
-        );
-        assert_eq!(
-            policy.sar_resource_attributes.verb,
-            Some(Binding::Literal("get".into()))
-        );
+        assert_eq!(rule.sar.namespace, Some(Binding::Variable("tenant-id".into())));
+        assert_eq!(rule.sar.api_group, Some(Binding::Literal("example.io".into())));
+        assert_eq!(rule.sar.resource, Some(Binding::Literal("widgets".into())));
+        assert_eq!(rule.sar.verb, Some(Binding::Literal("get".into())));
     }
 
     #[test]
@@ -269,11 +329,12 @@ grpc:
         service: svc
         grpc-methods: []
         headers: []
-      sar-resource-attributes:
-        namespace: "{value}"
-        api-group: g
-        resource: r
-        verb: v
+      access:
+        sar-resource-attributes:
+          namespace: "{value}"
+          api-group: g
+          resource: r
+          verb: v
 http:
   listener:
     host: 0.0.0.0
@@ -286,7 +347,7 @@ http:
             value = value
         );
         let cfg = parse_yaml(&yaml);
-        cfg.grpc.rules[0].sar_resource_attributes.namespace.clone().unwrap()
+        cfg.grpc.rules[0].sar.namespace.clone().unwrap()
     }
 
     #[test]

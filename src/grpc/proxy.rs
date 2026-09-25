@@ -71,44 +71,51 @@ impl ProxyHttp for GrpcProxy {
         info!("request_filter");
         let path = session.req_header().uri.path();
 
-        let bearer_token = parse_bearer_token(session);
-
         let (service, action) = parse_grpc_path(path);
 
-        let auth_info = self.client.authenticate(bearer_token).await;
+        match parse_bearer_token(session) {
+            Some(bearer_token) => {
+                let auth_info = self.client.authenticate(bearer_token).await;
 
-        match auth_info {
-            Ok(auth_info) => {
-                for rule in &self.config.grpc.rules {
-                    if let Some(vars) = check_rule(rule, service, action, |header| get_header(session, header)) {
-                        if let Err(e) = run_authz(
-                            session,
-                            &AuthorizationInfo {
-                                sar_resource_attributes: &rule.sar_resource_attributes,
-                                vars: &vars,
-                                client: &self.client,
-                                auth_info: &auth_info,
-                                config: &self.config,
-                            },
-                        )
-                        .await
-                        {
-                            return self.error_response(16, &e.to_string(), session).await;
+                match auth_info {
+                    Ok(auth_info) => {
+                        for rule in &self.config.grpc.rules {
+                            if let Some(vars) = check_rule(&rule.request, service, action, |header| get_header(session, header))
+                            {
+                                if let Err(e) = run_authz(
+                                    session,
+                                    &AuthorizationInfo {
+                                        sar_resource_attributes: &rule.sar,
+                                        vars: &vars,
+                                        client: &self.client,
+                                        auth_info: &auth_info,
+                                        config: &self.config,
+                                    },
+                                )
+                                .await
+                                {
+                                    return self.error_response(16, &e.to_string(), session).await;
+                                }
+                                return Ok(false);
+                            }
                         }
-
-                        return Ok(false); // Successfully authorized. Continue to upstream.
-                    } else {
-                        info!("policy does not match: {:?}", rule.name);
+                    },
+                    Err(e) => {
+                        error!("authentication failed: {:?}", e);
+                        return self.error_response(16, &e.to_string(), session).await;
+                    },
+                }
+            },
+            None => {
+                for rule in &self.config.grpc.no_auth_rules {
+                    if let Some(_) = check_rule(&rule.request, service, action, |header| get_header(session, header)) {
+                        return Ok(false);
                     }
                 }
-
-                return self.error_response(16, "no policy matched", session).await;
-            },
-            Err(e) => {
-                error!("authentication failed: {:?}", e);
-                return self.error_response(16, &e.to_string(), session).await;
             },
         }
+
+        self.error_response(16, "no rule matched", session).await
     }
 
     async fn upstream_peer(&self, _session: &mut Session, _ctx: &mut Self::CTX) -> Result<Box<HttpPeer>> {

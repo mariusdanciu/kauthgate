@@ -1,5 +1,4 @@
-use crate::config::defs::Listener;
-use crate::config::defs::{Binding, Entity, SARAttributes, Upstream};
+use crate::config::defs::{Binding, Entity, ProtocolConfig};
 use serde::Deserialize;
 use serde::Deserializer;
 
@@ -36,17 +35,4 @@ pub struct RequestMatch {
     pub query_params: Option<Vec<Entity>>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct Rule {
-    pub name: String,
-    pub request: RequestMatch,
-    #[serde(rename = "sar-resource-attributes")]
-    pub sar_resource_attributes: SARAttributes,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct HttpConfig {
-    pub listener: Listener,
-    pub upstream: Upstream,
-    pub rules: Vec<Rule>,
-}
+pub type HttpConfig = ProtocolConfig<RequestMatch>;

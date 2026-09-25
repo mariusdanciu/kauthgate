@@ -1,29 +1,29 @@
 use crate::config::defs::Binding;
-use crate::config::grpc::Rule;
+use crate::config::grpc::RequestMatch;
 use crate::utils::ConfigVariables;
 use std::collections::HashMap;
 
 pub(crate) fn check_rule(
-    policy: &Rule,
+    request: &RequestMatch,
     service: &str,
     grpc_method: &str,
     get_header: impl Fn(&str) -> Option<String>,
 ) -> Option<ConfigVariables> {
     let mut variables = HashMap::with_capacity(10);
 
-    if let Some(svc) = &policy.request.service
+    if let Some(svc) = &request.service
         && svc != service
     {
         return None;
     }
 
-    if let Some(methods) = &policy.request.grpc_methods
+    if let Some(methods) = &request.grpc_methods
         && !methods.iter().any(|m| m == grpc_method)
     {
         return None;
     }
 
-    if let Some(headers) = &policy.request.headers {
+    if let Some(headers) = &request.headers {
         for header in headers {
             let value = get_header(header.name.as_str());
 
@@ -50,29 +50,14 @@ pub(crate) fn check_rule(
 
 #[cfg(test)]
 pub mod tests {
-    // -- match_policy tests --
     use super::*;
-    use crate::config::Binding;
-    use crate::config::SARAttributes;
-    use crate::config::defs::Entity;
-    use crate::config::grpc::RequestMatch;
+    use crate::config::defs::{Binding, Entity};
 
-    fn policy(service: &str, actions: &[&str], headers: Vec<Entity>) -> Rule {
-        Rule {
-            name: "test-policy".into(),
-            request: RequestMatch {
-                service: Some(service.into()),
-                grpc_methods: Some(actions.iter().map(|s| s.to_string()).collect()),
-                headers: if headers.is_empty() { None } else { Some(headers) },
-            },
-            sar_resource_attributes: SARAttributes {
-                namespace: Some(Binding::Variable("tenant".into())),
-                api_group: Some(Binding::Literal("example.io".into())),
-                api_version: None,
-                resource: Some(Binding::Literal("widgets".into())),
-                sub_resource: None,
-                verb: Some(Binding::Literal("get".into())),
-            },
+    fn request(service: &str, actions: &[&str], headers: Vec<Entity>) -> RequestMatch {
+        RequestMatch {
+            service: Some(service.into()),
+            grpc_methods: Some(actions.iter().map(|s| s.to_string()).collect()),
+            headers: if headers.is_empty() { None } else { Some(headers) },
         }
     }
 
@@ -95,27 +80,27 @@ pub mod tests {
     }
 
     #[test]
-    fn match_policy_matches_service_and_action() {
-        let p = policy("my.Service", &["GetItem", "ListItems"], vec![]);
-        assert!(check_rule(&p, "my.Service", "GetItem", no_header).is_some());
-        assert!(check_rule(&p, "my.Service", "ListItems", no_header).is_some());
+    fn match_rule_matches_service_and_action() {
+        let r = request("my.Service", &["GetItem", "ListItems"], vec![]);
+        assert!(check_rule(&r, "my.Service", "GetItem", no_header).is_some());
+        assert!(check_rule(&r, "my.Service", "ListItems", no_header).is_some());
     }
 
     #[test]
-    fn match_policy_rejects_wrong_service() {
-        let p = policy("my.Service", &["GetItem"], vec![]);
-        assert!(check_rule(&p, "other.Service", "GetItem", no_header).is_none());
+    fn match_rule_rejects_wrong_service() {
+        let r = request("my.Service", &["GetItem"], vec![]);
+        assert!(check_rule(&r, "other.Service", "GetItem", no_header).is_none());
     }
 
     #[test]
-    fn match_policy_rejects_wrong_action() {
-        let p = policy("my.Service", &["GetItem"], vec![]);
-        assert!(check_rule(&p, "my.Service", "DeleteItem", no_header).is_none());
+    fn match_rule_rejects_wrong_action() {
+        let r = request("my.Service", &["GetItem"], vec![]);
+        assert!(check_rule(&r, "my.Service", "DeleteItem", no_header).is_none());
     }
 
     #[test]
-    fn match_policy_requires_all_headers() {
-        let p = policy(
+    fn match_rule_requires_all_headers() {
+        let r = request(
             "my.Service",
             &["GetItem"],
             vec![
@@ -128,7 +113,7 @@ pub mod tests {
             "x-request-id" => Some("r1".into()),
             _ => None,
         };
-        let result = check_rule(&p, "my.Service", "GetItem", get);
+        let result = check_rule(&r, "my.Service", "GetItem", get);
         assert!(result.is_some());
         let vars = result.unwrap();
         assert_eq!(vars.get("tenant").unwrap(), "t1");
@@ -136,8 +121,8 @@ pub mod tests {
     }
 
     #[test]
-    fn match_policy_rejects_missing_header() {
-        let p = policy(
+    fn match_rule_rejects_missing_header() {
+        let r = request(
             "my.Service",
             &["GetItem"],
             vec![
@@ -149,60 +134,49 @@ pub mod tests {
             "x-tenant-id" => Some("t1".into()),
             _ => None,
         };
-        assert!(check_rule(&p, "my.Service", "GetItem", get).is_none());
+        assert!(check_rule(&r, "my.Service", "GetItem", get).is_none());
     }
 
     #[test]
-    fn match_policy_no_headers_always_passes() {
-        let p = policy("my.Service", &["GetItem"], vec![]);
-        assert!(check_rule(&p, "my.Service", "GetItem", no_header).is_some());
+    fn match_rule_no_headers_always_passes() {
+        let r = request("my.Service", &["GetItem"], vec![]);
+        assert!(check_rule(&r, "my.Service", "GetItem", no_header).is_some());
     }
 
     #[test]
-    fn match_policy_literal_header_rejects_wrong_value() {
-        let p = policy("my.Service", &["GetItem"], vec![literal_header("x-version", "v2")]);
+    fn match_rule_literal_header_rejects_wrong_value() {
+        let r = request("my.Service", &["GetItem"], vec![literal_header("x-version", "v2")]);
         let get = |h: &str| match h {
             "x-version" => Some("v1".into()),
             _ => None,
         };
-        assert!(check_rule(&p, "my.Service", "GetItem", get).is_none());
+        assert!(check_rule(&r, "my.Service", "GetItem", get).is_none());
     }
 
     #[test]
-    fn match_policy_literal_header_accepts_matching_value() {
-        let p = policy("my.Service", &["GetItem"], vec![literal_header("x-version", "v2")]);
+    fn match_rule_literal_header_accepts_matching_value() {
+        let r = request("my.Service", &["GetItem"], vec![literal_header("x-version", "v2")]);
         let get = |h: &str| match h {
             "x-version" => Some("v2".into()),
             _ => None,
         };
-        assert!(check_rule(&p, "my.Service", "GetItem", get).is_some());
+        assert!(check_rule(&r, "my.Service", "GetItem", get).is_some());
     }
 
     #[test]
-    fn match_policy_all_conditions_none_matches_everything() {
-        let p = Rule {
-            name: "catch-all".into(),
-            request: RequestMatch {
-                service: None,
-                grpc_methods: None,
-                headers: None,
-            },
-            sar_resource_attributes: SARAttributes {
-                namespace: Some(Binding::Literal("default".into())),
-                api_group: Some(Binding::Literal("example.io".into())),
-                api_version: None,
-                resource: Some(Binding::Literal("widgets".into())),
-                sub_resource: None,
-                verb: Some(Binding::Literal("get".into())),
-            },
+    fn match_rule_all_conditions_none_matches_everything() {
+        let r = RequestMatch {
+            service: None,
+            grpc_methods: None,
+            headers: None,
         };
-        assert!(check_rule(&p, "any.Service", "AnyMethod", no_header).is_some());
+        assert!(check_rule(&r, "any.Service", "AnyMethod", no_header).is_some());
     }
 
     #[test]
-    fn match_policy_injects_service_and_method() {
-        let p = policy("my.Service", &["GetItem"], vec![]);
-        let vars = check_rule(&p, "my.Service", "GetItem", no_header).unwrap();
+    fn match_rule_injects_service_and_method() {
+        let r = request("my.Service", &["GetItem"], vec![]);
+        let vars = check_rule(&r, "my.Service", "GetItem", no_header).unwrap();
         assert_eq!(vars.get("service").unwrap(), "my.Service");
         assert_eq!(vars.get("grpc_method").unwrap(), "GetItem");
     }

@@ -65,14 +65,13 @@ pub(crate) fn compile_resource_attributes(
     }
 }
 
-pub(crate) fn parse_bearer_token(session: &Session) -> &str {
+pub(crate) fn parse_bearer_token(session: &Session) -> Option<&str> {
     session
         .req_header()
         .headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
-        .unwrap_or("")
 }
 
 pub(crate) fn path_to_vec(path: &str) -> Vec<&str> {

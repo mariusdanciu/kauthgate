@@ -25,12 +25,12 @@ grpc:
         headers:
           - name: "x-tenant-id"
             value: "{tenant-id}"
-
-      sar-resource-attributes:
-        namespace: "{tenant-id}"
-        api-group: dataconnecthub.opendatahub.io
-        resource: data-store
-        verb: "get"
+      access:
+        sar-resource-attributes:
+          namespace: "{tenant-id}"
+          api-group: dataconnecthub.opendatahub.io
+          resource: data-store
+          verb: "get"
 
 http:
   listener:
@@ -49,11 +49,19 @@ http:
             value: "{tenant-id}"
         methods:
           - post
+      access:
+        sar-resource-attributes:
+          namespace: "{tenant-id}"
+          api-group: dataconnecthub.opendatahub.io
+          resource: data-connections
+          verb: "create"
 
-      sar-resource-attributes:
-        namespace: "{tenant-id}"
-        api-group: dataconnecthub.opendatahub.io
-        resource: data-connections
-        verb: "create"
-
-
+    - name: no-auth
+      request:
+        path: /health
+        headers:
+          - name: "x-tenant-id"
+            value: "{tenant-id}"
+        methods:
+          - post
+      access: no-auth

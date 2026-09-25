@@ -1,9 +1,7 @@
 use serde::Deserialize;
 
 use crate::config::defs::Entity;
-use crate::config::defs::Listener;
-use crate::config::defs::SARAttributes;
-use crate::config::defs::Upstream;
+use crate::config::defs::ProtocolConfig;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct RequestMatch {
@@ -15,17 +13,4 @@ pub struct RequestMatch {
     pub headers: Option<Vec<Entity>>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct Rule {
-    pub name: String,
-    pub request: RequestMatch,
-    #[serde(rename = "sar-resource-attributes")]
-    pub sar_resource_attributes: SARAttributes,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct GrpcConfig {
-    pub listener: Listener,
-    pub upstream: Upstream,
-    pub rules: Vec<Rule>,
-}
+pub type GrpcConfig = ProtocolConfig<RequestMatch>;
